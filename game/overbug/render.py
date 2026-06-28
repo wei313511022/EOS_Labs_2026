@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import sin
+from pathlib import Path
 
 from .models import BoardState, Component, Item, ItemKind, Player, Rect, Station, StationKind
 from .rules import INSPECTION_SECONDS, SOLDER_SECONDS
@@ -32,6 +32,7 @@ class Renderer:
         self.small = pygame.font.SysFont("Segoe UI", 15)
         self.big = pygame.font.SysFont("Segoe UI", 42, bold=True)
         self.mid = pygame.font.SysFont("Segoe UI", 26, bold=True)
+        self.solder_icon_image = self._load_solder_icon_image()
 
     def draw(self, state) -> None:
         self.screen.fill(PALETTE["bg"])
@@ -86,7 +87,7 @@ class Renderer:
 
         if station.kind is StationKind.MATERIAL_BIN and station.component is not None:
             self._draw_component_icon(station.component, rect.centerx, rect.centery + 4)
-            self._label(station.component.short, rect.centerx, rect.bottom - 16)
+            self._badge(station.component.short, rect.centerx, rect.bottom + 12, small=True)
         elif station.kind is StationKind.SOLDER:
             self._draw_solder_icon(rect.centerx, rect.centery - 8)
             self._progress_bar(
@@ -96,10 +97,10 @@ class Renderer:
                 station.solder_progress_seconds / SOLDER_SECONDS,
             )
             if station.board_item:
-                self._draw_item(station.board_item, rect.x + 16, rect.y + 12, 0.7)
+                self._draw_item(station.board_item, rect.x + 16, rect.y + 4, 0.7)
             if station.pending_material:
                 self._draw_item(station.pending_material, rect.right - 42, rect.y + 16, 0.62)
-            self._label("2s", rect.centerx, rect.bottom - 34)
+            self._badge("2s", rect.centerx, rect.bottom + 12, small=True)
         elif station.kind is StationKind.INSPECTION:
             self._draw_computer_icon(rect.centerx, rect.centery - 8)
             self._progress_bar(
@@ -110,16 +111,16 @@ class Renderer:
             )
             if station.item:
                 self._draw_item(station.item, rect.x + 12, rect.y + 12, 0.68)
-            self._label("4s", rect.centerx, rect.bottom - 34)
+            self._badge("4s", rect.centerx, rect.bottom + 12, small=True)
         elif station.kind is StationKind.INTAKE:
             self._draw_board_icon(rect.centerx, rect.centery - 4, sparks=True, scale=0.85)
-            self._label("IN", rect.centerx, rect.bottom - 16)
+            self._badge("IN", rect.centerx, rect.bottom + 12, small=True)
         elif station.kind is StationKind.SHIPPING:
             self._draw_shipping_icon(rect.centerx, rect.centery - 6)
-            self._label("OUT", rect.centerx, rect.bottom - 16)
+            self._badge("OUT", rect.centerx, rect.bottom + 12, small=True)
         elif station.kind is StationKind.TRASH:
             self._draw_trash_icon(rect.centerx, rect.centery - 4)
-            self._label("RECYCLE", rect.centerx, rect.bottom - 16, small=True)
+            self._badge("RECYCLE", rect.centerx, rect.bottom + 12, small=True)
         elif station.kind is StationKind.COUNTER:
             if station.item:
                 self._draw_item(station.item, rect.centerx - 18, rect.centery - 18, 0.75)
@@ -177,7 +178,10 @@ class Renderer:
             self._draw_component_icon(item.component, int(x + 22 * scale), int(y + 22 * scale), scale)
         elif item.kind is ItemKind.BOARD and item.board is not None:
             sparks = item.board.state is BoardState.FAILED
-            self._draw_board_icon(int(x + 24 * scale), int(y + 20 * scale), sparks=sparks, scale=scale)
+            board_x = int(x + 24 * scale)
+            board_y = int(y + 20 * scale)
+            self._draw_board_icon(board_x, board_y, sparks=sparks, scale=scale)
+            self._draw_board_counts(item.board, board_x, board_y + int(24 * scale), scale)
 
     def _draw_component_icon(self, component: Component, x: float, y: float, scale: float = 1.0) -> None:
         pygame = self.pygame
@@ -248,19 +252,80 @@ class Renderer:
             for py in (rect.y + 7, rect.bottom - 7):
                 pygame.draw.circle(self.screen, (232, 238, 219), (px, py), max(2, int(3 * scale)))
         if sparks:
-            t = self.pygame.time.get_ticks() / 180.0
-            sx = rect.right + 5
-            sy = rect.y + int((sin(t) + 1.0) * h / 2.0)
-            pygame.draw.line(self.screen, PALETTE["gold"], (sx, sy), (sx + 10, sy - 8), 3)
-            pygame.draw.line(self.screen, PALETTE["red"], (sx, sy), (sx + 8, sy + 7), 2)
+            inset = max(6, int(9 * scale))
+            width = max(3, int(4 * scale))
+            pygame.draw.line(
+                self.screen,
+                PALETTE["red"],
+                (rect.x + inset, rect.y + inset),
+                (rect.right - inset, rect.bottom - inset),
+                width,
+            )
+            pygame.draw.line(
+                self.screen,
+                PALETTE["red"],
+                (rect.right - inset, rect.y + inset),
+                (rect.x + inset, rect.bottom - inset),
+                width,
+            )
 
     def _draw_solder_icon(self, x: float, y: float) -> None:
         pygame = self.pygame
         x = int(x)
         y = int(y)
-        pygame.draw.line(self.screen, PALETTE["ink"], (x - 22, y + 16), (x + 18, y - 18), 7)
-        pygame.draw.line(self.screen, PALETTE["gold"], (x + 10, y - 11), (x + 25, y - 25), 5)
-        pygame.draw.circle(self.screen, PALETTE["red"], (x + 27, y - 27), 4)
+        if self.solder_icon_image is not None:
+            image_rect = self.solder_icon_image.get_rect(center=(x, y - 2))
+            self.screen.blit(self.solder_icon_image, image_rect)
+            return
+
+        black = (12, 16, 20)
+        light = (250, 252, 254)
+
+        cord_points = [
+            (x - 29, y + 10),
+            (x - 37, y + 18),
+            (x - 30, y + 26),
+            (x - 15, y + 23),
+            (x - 2, y + 19),
+            (x + 13, y + 24),
+            (x + 31, y + 9),
+        ]
+        pygame.draw.lines(self.screen, black, False, cord_points, 8)
+        pygame.draw.lines(self.screen, light, False, cord_points[:-1], 4)
+
+        handle_points = [
+            (x - 29, y + 10),
+            (x - 40, y + 4),
+            (x - 35, y - 9),
+            (x - 28, y - 13),
+            (x - 26, y - 20),
+            (x - 15, y - 10),
+            (x - 21, y - 1),
+            (x - 13, y + 6),
+        ]
+        pygame.draw.lines(self.screen, black, False, handle_points, 8)
+        pygame.draw.lines(self.screen, light, False, handle_points[1:-1], 4)
+
+        collar = [
+            (x - 16, y - 20),
+            (x + 3, y - 2),
+            (x - 2, y + 4),
+            (x - 22, y - 14),
+        ]
+        pygame.draw.polygon(self.screen, black, collar)
+        inner_collar = [
+            (x - 15, y - 16),
+            (x - 4, y - 5),
+            (x - 5, y - 2),
+            (x - 17, y - 13),
+        ]
+        pygame.draw.polygon(self.screen, light, inner_collar)
+
+        body_start = (x - 9, y - 20)
+        body_end = (x + 22, y - 49)
+        pygame.draw.line(self.screen, black, body_start, body_end, 12)
+        pygame.draw.line(self.screen, light, (x - 6, y - 17), (x + 18, y - 41), 6)
+        pygame.draw.line(self.screen, black, (x + 20, y - 47), (x + 29, y - 56), 7)
 
     def _draw_computer_icon(self, x: float, y: float) -> None:
         pygame = self.pygame
@@ -302,6 +367,36 @@ class Renderer:
         font = self.small if small else self.font
         rendered = font.render(text, True, PALETTE["ink"])
         self.screen.blit(rendered, (int(x - rendered.get_width() / 2), int(y - rendered.get_height() / 2)))
+
+    def _badge(self, text: str, x: float, y: float, small: bool = False) -> None:
+        pygame = self.pygame
+        font = self.small if small else self.font
+        rendered = font.render(text, True, PALETTE["ink"])
+        rect = rendered.get_rect(center=(int(x), int(y)))
+        rect.inflate_ip(12, 6)
+        pygame.draw.rect(self.screen, (255, 255, 255), rect, border_radius=6)
+        pygame.draw.rect(self.screen, PALETTE["line"], rect, 1, border_radius=6)
+        self.screen.blit(rendered, rendered.get_rect(center=rect.center))
+
+    def _draw_board_counts(self, board, x: int, y: int, scale: float) -> None:
+        if board.total_components <= 0:
+            return
+        parts = [
+            f"{component.short}{board.counts[component.value]}"
+            for component in Component
+            if board.counts[component.value] > 0
+        ]
+        self._badge(" ".join(parts), x, y, small=True)
+
+    def _load_solder_icon_image(self):
+        path = Path(__file__).resolve().parents[1] / "assets" / "soldering_iron_reference.png"
+        if not path.exists():
+            return None
+        try:
+            image = self.pygame.image.load(str(path)).convert_alpha()
+        except self.pygame.error:
+            return None
+        return self.pygame.transform.smoothscale(image, (48, 48))
 
     def _draw_game_over(self, state) -> None:
         pygame = self.pygame
