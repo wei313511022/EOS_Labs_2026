@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="RTES913: EOS course labs that build a cooperative Raspberry Pi repair game from system calls to concurrent multiplayer." />
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="Overbug | RTES913: EOS" />
+  <meta property="og:description" content="Build operating-system concepts into a cooperative Raspberry Pi repair game, one verified subsystem at a time." />
+  <meta property="og:url" content="https://overbug-rtes913-eos.kittychao520.chatgpt.site" />
+  <meta property="og:image" content="https://overbug-rtes913-eos.kittychao520.chatgpt.site/assets/overbug-social.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <title>Overbug | RTES913: EOS</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="top-nav" aria-label="Main navigation">
+      <a class="brand" href="index.html">Overbug</a>
+      <div class="nav-links">
+        <a aria-current="page" href="index.html">Course</a>
+        <a href="#game">Game</a>
+        <a href="#labs">Labs</a>
+        <a class="nav-cta" href="lab0.html">Start Lab 0</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="hero compact">
+      <p class="eyebrow">RTES913 · EOS · Raspberry Pi</p>
+      <p class="hero-kicker">Build an operating system you can play</p>
+      <h1>Overbug<br><span>Labs</span></h1>
+      <p class="subtitle">
+        Build operating-system concepts into a cooperative Raspberry Pi repair
+        game, one verified subsystem at a time.
+      </p>
+      <div class="hero-actions">
+        <a class="button button-primary" href="lab0.html">Begin with Lab 0 <span aria-hidden="true">→</span></a>
+        <a class="button button-quiet" href="#game">See the game loop</a>
+      </div>
+    </section>
+
+    <section class="course-stats" aria-label="Course at a glance">
+      <div><strong>4</strong><span>progressive labs</span></div>
+      <div><strong>1</strong><span>shared game system</span></div>
+      <div><strong>2–4</strong><span>multiplayer Pi controls</span></div>
+      <div><strong>0 → 3</strong><span>from setup to concurrency</span></div>
+    </section>
+
+    <section class="panel intro-panel" id="course">
+      <div class="section-heading">
+        <p class="section-label">The through-line</p>
+        <h2>One course project.<br>Every layer connected.</h2>
+      </div>
+      <div class="overview-grid">
+        <div>
+          <p>
+            In 2026, RTES913: EOS shifts from isolated implementation drills to
+            AI-assisted system architecture and verification. Students still build
+            real software, but each lab asks them to connect requirements,
+            interfaces, tests, and runtime behavior into one working project.
+          </p>
+          <p>
+            <strong>Overbug</strong> is that project: a cooperative classroom game
+            set in the 913 lab. Players help the TAs debug and repair broken
+            Raspberry Pi boards so the lab can keep running and everyone can get
+            back to research on time.
+          </p>
+        </div>
+
+        <aside class="overview-note">
+          <span class="mini-label">By the end</span>
+          <strong>Students can trace a button press from a GPIO pin to a live multiplayer game state.</strong>
+          <p>That is the system they build, test, and explain across the labs.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="panel game-panel" id="game">
+      <div class="section-heading">
+        <p class="section-label">The shared destination</p>
+        <h2>Repair the lab before time runs out.</h2>
+      </div>
+      <p class="section-intro">
+        The demo below shows the main Overbug workspace: orders at the top,
+        component bins on the left, soldering benches, inspection computers,
+        recycle, shipping, score, and timer.
+      </p>
+
+      <figure class="demo-figure">
+        <img src="assets/overbug-demo.png" alt="Overbug game demo showing orders, component bins, solder stations, inspection stations, recycle, shipping, score, and timer">
+        <figcaption>
+          Demo layout for the multiplayer Raspberry Pi repair game.
+        </figcaption>
+      </figure>
+
+      <div class="game-loop" aria-label="Overbug game loop">
+        <div><span>01</span><strong>Read orders</strong><p>Check the parts a board needs.</p></div>
+        <div><span>02</span><strong>Repair boards</strong><p>Collect components and solder carefully.</p></div>
+        <div><span>03</span><strong>Inspect &amp; ship</strong><p>Pass inspection to score as a team.</p></div>
+      </div>
+
+      <div class="rules-layout">
+        <div class="rules-block">
+          <h3>Round flow</h3>
+          <ol>
+            <li>Read the order cards to see which components are needed.</li>
+            <li>Take a faulty board from the intake area.</li>
+            <li>Collect resistors, capacitors, and inductors from the bins.</li>
+            <li>Place the board and components at a soldering workstation.</li>
+            <li>Hold the solder key near the workstation to attach the component.</li>
+            <li>Send the soldered board to an inspection station.</li>
+            <li>Ship a board that passes inspection to score before time runs out.</li>
+          </ol>
+        </div>
+
+        <div class="rules-block">
+          <h3>Basic rules</h3>
+          <ul class="rules-list">
+            <li>Each player can carry only one item at a time.</li>
+            <li>Each order needs 1 to 4 total components.</li>
+            <li>Each component type can require 0 to 2 pieces.</li>
+            <li>A soldering station holds one board and one pending component.</li>
+            <li>Soldering takes about 2 seconds while the solder key is held.</li>
+            <li>Soldering pauses if the player leaves or releases the key.</li>
+            <li>Inspection is automatic and takes about 4 seconds.</li>
+            <li>Only boards matching an order can be shipped successfully.</li>
+            <li>Wrong or unwanted boards can be recycled without losing points.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel labs-panel" id="labs">
+      <div class="section-heading split-heading">
+        <div>
+          <p class="section-label">The roadmap</p>
+          <h2>Build the system in four moves.</h2>
+        </div>
+        <p class="section-intro">Each lab delivers a working interface for the next one. Follow them in order for the smoothest path.</p>
+      </div>
+      <p class="section-intro">
+        The labs grow the game from its development environment into kernel
+        observation, device-state input, and concurrent networked game control.
+      </p>
+      <div class="card-grid">
+        <a class="lab-card" href="lab0.html">
+          <span class="lab-tag">Lab 0</span>
+          <h3>Setup</h3>
+          <p>Prepare the Ubuntu VM, Raspberry Pi OS, networking, and SSH access.</p>
+          <span class="card-link">Open lab <span aria-hidden="true">→</span></span>
+        </a>
+
+        <a class="lab-card" href="lab1.html">
+          <span class="lab-tag">Lab 1</span>
+          <h3>System Call</h3>
+          <p>Add <code>task_snapshot</code> so user programs can observe kernel runtime behavior.</p>
+          <span class="card-link">Open lab <span aria-hidden="true">→</span></span>
+        </a>
+
+        <a class="lab-card" href="lab2.html">
+          <span class="lab-tag">Lab 2</span>
+          <h3>GPIO Device-State Input</h3>
+          <p>Expose Raspberry Pi controls as a polling device state and send it to one Overbug player over UDP.</p>
+          <span class="card-link">Open lab <span aria-hidden="true">→</span></span>
+        </a>
+
+        <a class="lab-card" href="lab3.html">
+          <span class="lab-tag">Lab 3</span>
+          <h3>Concurrent Multiplayer Server</h3>
+          <p>Use threads, mutexes, and semaphores to coordinate two to four Raspberry Pi players.</p>
+          <span class="card-link">Open lab <span aria-hidden="true">→</span></span>
+        </a>
+      </div>
+    </section>
+
+    <section class="panel flow-panel">
+      <div class="section-heading">
+        <p class="section-label">Architecture in context</p>
+        <h2>See how the pieces fit.</h2>
+      </div>
+      <p class="section-intro">
+        Each lab contributes one layer to the Overbug system, from setup and
+        kernel observation to a concurrent multiplayer Raspberry Pi-to-PC game path.
+      </p>
+
+      <div class="lab-flow" aria-label="Lab design flow">
+        <article class="flow-step">
+          <span class="flow-kicker">Lab 0</span>
+          <h3>Setup</h3>
+          <p>Build the development path: Ubuntu VM, Raspberry Pi OS, networking, and SSH.</p>
+          <div class="file-chips" aria-label="Lab 0 files">
+            <code>lab0.html</code>
+          </div>
+        </article>
+
+        <article class="flow-step">
+          <span class="flow-kicker">Lab 1</span>
+          <h3>System Call</h3>
+          <p>Add a kernel observation point with <code>task_snapshot</code>.</p>
+          <div class="file-chips" aria-label="Lab 1 files">
+            <code>lab1.html</code>
+          </div>
+        </article>
+
+        <article class="flow-step">
+          <span class="flow-kicker">Lab 2</span>
+          <h3><a href="lab2.html">GPIO Device-State Input</a></h3>
+          <p>Convert GPIO values into <code>OBTN XX</code>, then send <code>OBIN</code> UDP input to the single-player game server.</p>
+          <div class="file-chips" aria-label="Lab 2 files">
+            <code>lab2.html</code>
+            <code>driver.c (student)</code>
+            <code>reader.c (student)</code>
+            <code>overbug_protocol.h</code>
+            <code>/dev/overbug_buttons</code>
+            <code>OBTN XX</code>
+            <code>OBIN packet</code>
+            <code>player 1</code>
+          </div>
+        </article>
+
+        <article class="flow-step">
+          <span class="flow-kicker">Lab 3</span>
+          <h3><a href="lab3.html">Concurrent Multiplayer Server</a></h3>
+          <p>Extend the server for multiple inputs, players, collisions, and synchronized game state.</p>
+          <div class="file-chips" aria-label="Lab 3 files">
+            <code>lab3.html</code>
+            <code>Lab3/server.c (student)</code>
+            <code>pthread</code>
+            <code>sem_t</code>
+            <code>players 2–4</code>
+          </div>
+        </article>
+
+        <article class="flow-step">
+          <span class="flow-kicker">Game MVP</span>
+          <h3>Playable Loop</h3>
+          <p>Run orders, boards, components, soldering, inspection, shipping, and scoring.</p>
+          <div class="file-chips" aria-label="Game files">
+            <code>game/main.py</code>
+            <code>game/data/lab_mvp.json</code>
+            <code>game/overbug/*</code>
+          </div>
+        </article>
+      </div>
+
+      <div class="data-flow" aria-label="Runtime input data flow">
+        <strong>Lab 2 and Lab 3 input path</strong>
+        <div class="data-flow-track">
+          <span>physical controls</span>
+          <span>GPIO device state</span>
+          <span>driver.c</span>
+          <span>OBTN XX device</span>
+          <span>reader.c</span>
+          <span>OBIN UDP :17666</span>
+          <span>server.c</span>
+          <span>OBST JSON :17667</span>
+          <span>display.py</span>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    RTES913 - EOS - Overbug
+  </footer>
+</body>
+</html>
