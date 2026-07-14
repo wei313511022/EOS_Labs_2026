@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Lab 0 for RTES913: EOS — prepare Ubuntu, Raspberry Pi OS, networking, and SSH access." />
+  <title>Lab 0 - Setting up your Raspberry Pi</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="top-nav" aria-label="Main navigation">
+      <a class="brand" href="index.html">Overbug</a>
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a aria-current="page" href="lab0.html">Lab 0</a>
+        <a href="lab1.html">Lab 1</a>
+        <a href="lab2.html">Lab 2</a>
+        <a href="lab3.html">Lab 3</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="hero lab-hero">
+      <p class="eyebrow">RTES913 - EOS - Raspberry Pi 4</p>
+      <h1>Lab 0: Setting up your Raspberry Pi</h1>
+      <p class="subtitle">
+        Prepare the Ubuntu VM, flash Raspberry Pi OS, configure networking, and
+        connect to the board through SSH.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Purpose</h2>
+      <p>
+        Lab 0 makes sure the development machine, Ubuntu virtual machine, and
+        Raspberry Pi can communicate reliably before kernel development begins.
+        Students who already use Ubuntu directly can skip the VirtualBox setup
+        and continue with the Raspberry Pi steps.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Required downloads</h2>
+      <ul class="resource-list">
+        <li><a href="https://www.virtualbox.org/wiki/Downloads">VirtualBox</a></li>
+        <li><a href="https://releases.ubuntu.com/noble/?_gl=1*2ew6cm*_gcl_au*MTEwNjA4MDc2NC4xNzgyMjcxMzE0">Ubuntu 24.04 Desktop ISO</a></li>
+        <li><a href="https://www.raspberrypi.com/software/">Raspberry Pi Imager</a></li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>1. VirtualBox</h2>
+      <p>
+        Install VirtualBox on the host computer, then create an Ubuntu 24.04 VM.
+        During Ubuntu installation, choose English as the installation language.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Setting</th>
+            <th>Recommended value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Virtual disk</td>
+            <td>At least 20 GB</td>
+          </tr>
+          <tr>
+            <td>Memory</td>
+            <td>At least 4 GB RAM</td>
+          </tr>
+          <tr>
+            <td>CPU</td>
+            <td>At least 1 processor. More processors make compiling and installing faster.</td>
+          </tr>
+          <tr>
+            <td>Installation mode</td>
+            <td>Check <strong>Skip Unattended Installation</strong>; otherwise the terminal may not open correctly.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <figure class="lab-figure">
+        <img src="https://i.imgur.com/Ih6lZGV.jpeg" alt="VirtualBox skip unattended installation setting" loading="lazy">
+        <figcaption>Skip unattended installation when creating the Ubuntu VM.</figcaption>
+      </figure>
+
+      <!-- <div class="callout info">
+        <strong>Shared clipboard</strong>
+        If clipboard sharing does not work, follow the
+        <a href="https://askubuntu.com/questions/1421163/ubuntu-22-04-guest-additions-cd-shared-clipboard-shared-folder-do-not-work">Ubuntu 22.04 Guest Additions notes</a>,
+        then enable the shared clipboard after starting the VM.
+      </div> -->
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/ByTIPS9Slx.png" alt="VirtualBox shared clipboard setting" loading="lazy">
+        <figcaption>Enable shared clipboard from the running VM window.</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel">
+      <h2>2. Raspberry Pi Imager</h2>
+      <p>
+        Download and install Raspberry Pi Imager from the official Raspberry Pi
+        website. This tool writes Raspberry Pi OS to the SD card and lets you set
+        account, network, locale, and SSH options before booting.
+      </p>
+
+      <figure class="lab-figure">
+        <img src="https://i.imgur.com/OBzjlsk.png" alt="Raspberry Pi Imager download page" loading="lazy">
+        <figcaption>Download Raspberry Pi Imager from raspberrypi.com/software.</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel">
+      <h2>3. Flash Raspberry Pi OS</h2>
+      <ol>
+        <li>Insert the SD card into the computer with a card reader.</li>
+        <li>Open Raspberry Pi Imager.</li>
+        <li>Select <strong>Raspberry Pi OS (64-bit)</strong> as the operating system.</li>
+        <li>Select the SD card as <strong>Storage</strong>.</li>
+        <li>Choose <strong>Next</strong>, then open <strong>Edit Settings</strong>.</li>
+        <li>Set the password, WLAN if needed, locale, and SSH.</li>
+        <li>Save the settings, confirm the SD card erase prompt, and start writing the image.</li>
+      </ol>
+
+      <div class="callout warning">
+        <strong>Check the storage device carefully.</strong>
+        Raspberry Pi Imager erases the selected device before writing the image.
+      </div>
+
+      <figure class="lab-figure">
+        <img src="https://i.imgur.com/QK7DKuV.jpeg" alt="Raspberry Pi Imager operating system and storage selection" loading="lazy">
+        <figcaption>Select Raspberry Pi OS 64-bit and the correct SD card.</figcaption>
+      </figure>
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/rySMeTVP1x.png" alt="Raspberry Pi Imager edit settings dialog" loading="lazy">
+        <figcaption>Use Edit Settings to configure login, locale, and SSH before flashing.</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel">
+      <h2>4. Configure the Raspberry Pi IP</h2>
+      <ol>
+        <li>After flashing, open the SD card on the host computer.</li>
+        <li>Open <code>cmdline.txt</code>.</li>
+        <li>Append <code>ip=&lt;raspberry-pi-ip&gt;</code> to the end of the single command-line row.</li>
+        <li>Save the file and eject the SD card safely.</li>
+        <li>Insert the SD card into the Raspberry Pi.</li>
+        <li>Connect Ethernet to the Raspberry Pi, and connect the other end to the computer through a USB Ethernet adapter.</li>
+        <li>Power on the Raspberry Pi.</li>
+      </ol>
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/ByG6eaNwJl.png" alt="cmdline.txt Raspberry Pi static IP setting" loading="lazy">
+        <figcaption>Add the Raspberry Pi IP setting at the end of <code>cmdline.txt</code>.</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel">
+      <h2>5. Configure VM Network Adapters</h2>
+      <p>
+        The VM needs two network paths: one for Internet access, and one for SSH
+        to the Raspberry Pi through the Ethernet adapter.
+      </p>
+
+      <h3>Adapter 1: Raspberry Pi connection</h3>
+      <p>
+        Use <strong>Bridged Adapter</strong> and choose the USB Ethernet adapter
+        that is connected to the Raspberry Pi.
+      </p>
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/SJHIZ64wJl.png" alt="VirtualBox bridged adapter for Raspberry Pi Ethernet" loading="lazy">
+        <figcaption>Bridge the VM to the network adapter connected to the Raspberry Pi.</figcaption>
+      </figure>
+
+      <h3>Adapter 2: Internet access</h3>
+      <p>
+        Use <strong>NAT</strong> for Internet access through the host computer.
+        A bridged adapter can also work if your environment requires it.
+      </p>
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/SJyYb6EwJe.png" alt="VirtualBox NAT adapter for Internet access" loading="lazy">
+        <figcaption>Use NAT for the VM's Internet connection.</figcaption>
+      </figure>
+
+      <div class="callout warning">
+        <strong>VirtualBox version note</strong>
+        In some VirtualBox 7.0 setups, NAT may need to be Adapter 1. If networking
+        fails, adjust the order of the two adapters for your version.
+      </div>
+
+      <h3>Test Internet access</h3>
+      <p>Inside the VM, test that it can reach the Internet.</p>
+      <pre><code>ping google.com</code></pre>
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/BJy6ZaEwJl.png" alt="Ping test from Ubuntu VM" loading="lazy">
+        <figcaption>A successful ping shows that the VM can reach the Internet.</figcaption>
+      </figure>
+
+      <h3>Set the VM IP</h3>
+      <p>
+        Configure the VM Ethernet-side IP so it is different from the Raspberry
+        Pi but still in the same subnet.
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Device</th>
+            <th>Example IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Raspberry Pi</td>
+            <td><code>192.168.222.222</code></td>
+          </tr>
+          <tr>
+            <td>Ubuntu VM</td>
+            <td><code>192.168.222.100</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/SJMxfpVDyx.png" alt="Ubuntu network settings for wired connection" loading="lazy">
+        <figcaption>Open the VM network settings for the Raspberry Pi-facing adapter.</figcaption>
+      </figure>
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/S1GZM6NDye.png" alt="Ubuntu manual IPv4 address setting" loading="lazy">
+        <figcaption>Set a manual IPv4 address in the same subnet as the Raspberry Pi.</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel">
+      <h2>6. SSH to the Raspberry Pi</h2>
+      <p>Open a terminal inside the Ubuntu VM and connect to the Raspberry Pi.</p>
+      <pre><code>ssh &lt;username&gt;@&lt;raspberry-pi-ip&gt;</code></pre>
+
+      <figure class="lab-figure">
+        <img src="https://hackmd.io/_uploads/H1pvfTVwkg.png" alt="SSH from Ubuntu VM to Raspberry Pi" loading="lazy">
+        <figcaption>SSH from the VM to the Raspberry Pi using the configured IP address.</figcaption>
+      </figure>
+    </section>
+
+    <section class="panel">
+      <h2>Expected results</h2>
+      <ul>
+        <li>The Ubuntu 24.04 VM boots successfully.</li>
+        <li>The VM has Internet access.</li>
+        <li>The Raspberry Pi boots Raspberry Pi OS 64-bit.</li>
+        <li>The VM and Raspberry Pi have different IP addresses in the same subnet.</li>
+        <li>The VM can SSH into the Raspberry Pi.</li>
+      </ul>
+    </section>
+
+    <!-- <section class="panel">
+      <h2>Report checklist</h2>
+      <ul class="checklist">
+        <li>Screenshot of the Ubuntu VM running successfully.</li>
+        <li>Screenshot of Raspberry Pi Imager settings before flashing.</li>
+        <li>Screenshot or terminal output showing VM Internet access.</li>
+        <li>Screenshot of the VM manual IPv4 settings.</li>
+        <li>Screenshot or terminal output showing SSH from the VM to the Raspberry Pi.</li>
+      </ul>
+    </section> -->
+  </main>
+
+  <footer class="footer">
+    <a href="index.html">Home</a> - <a href="lab1.html">Next: Lab 1</a>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
