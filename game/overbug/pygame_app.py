@@ -7,6 +7,10 @@ from .input import InputState
 from .render import Renderer
 
 
+LOGICAL_SIZE = (1280, 720)
+WINDOW_SIZE = (960, 540)
+
+
 def _key_name(pygame, key: int) -> str:
     return pygame.key.name(key).lower()
 
@@ -17,9 +21,10 @@ def run(level_path: Path) -> int:
     state = GameState.from_level_file(level_path)
     pygame.init()
     pygame.display.set_caption("Overbug")
-    screen = pygame.display.set_mode((1280, 720))
+    screen = pygame.display.set_mode(WINDOW_SIZE)
+    canvas = pygame.Surface(LOGICAL_SIZE)
     clock = pygame.time.Clock()
-    renderer = Renderer(pygame, screen)
+    renderer = Renderer(pygame, canvas)
     held_keys: set[str] = set()
 
     running = True
@@ -40,6 +45,7 @@ def run(level_path: Path) -> int:
         dt = clock.tick(60) / 1000.0
         state.tick(dt, InputState(held=held_keys.copy(), pressed=pressed))
         renderer.draw(state)
+        pygame.transform.smoothscale(canvas, WINDOW_SIZE, screen)
         pygame.display.flip()
 
     pygame.quit()

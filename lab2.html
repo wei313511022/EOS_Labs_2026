@@ -90,7 +90,7 @@
             <text class="pipeline-link-label" x="452" y="195">OBTN XX</text>
             <text class="pipeline-link-label" x="717" y="177">UDP · OBIN</text>
             <text class="pipeline-link-label" x="726" y="195">port 17666</text>
-            <text class="pipeline-link-label" x="946" y="177">UDP · OBST v1</text>
+            <text class="pipeline-link-label" x="946" y="177">UDP · OBST</text>
             <text class="pipeline-link-label" x="955" y="195">port 17667</text>
 
             <g class="pipeline-node">
@@ -244,7 +244,7 @@
       <pre><code>struct __attribute__((packed)) ob_input_packet {
     char magic[4];       /* "OBIN" */
     uint8_t player_id;   /* 1 for Lab 2 */
-    uint8_t button_mask; /* 6-bit device state */
+    uint8_t button_mask; /* device state */
 };</code></pre>
       <p>
         This definition lives in <code>overbug_protocol.h</code>. Include that
@@ -254,117 +254,7 @@
     </section>
 
     <section class="panel">
-      <h2>3. Core GPIO APIs and driver structure</h2>
-      <p>
-        The supplied polling driver follows the flow below. Learn the role of
-        each API before implementing your own module; the functions are kernel
-        APIs, so they run in the driver rather than in <code>reader.c</code>.
-      </p>
-
-      <h3>Core APIs</h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Driver stage</th>
-            <th>API or type</th>
-            <th>Purpose in this lab</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Configuration</td>
-            <td><code>module_param</code>, <code>MODULE_PARM_DESC</code></td>
-            <td>Expose the selected BCM GPIO numbers and active-low/pull-up settings when the module loads.</td>
-          </tr>
-          <tr>
-            <td>Find the chip</td>
-            <td><code>gpio_device_find_by_label</code>, <code>gpio_device_find</code>, <code>gpio_device_get_chip</code></td>
-            <td>Locate the Raspberry Pi GPIO controller before requesting its lines.</td>
-          </tr>
-          <tr>
-            <td>Request inputs</td>
-            <td><code>gpiochip_request_own_desc</code></td>
-            <td>Claim each selected GPIO line as an input and save its <code>gpio_desc</code>.</td>
-          </tr>
-          <tr>
-            <td>Read state</td>
-            <td><code>gpiod_get_value</code></td>
-            <td>Read every descriptor, apply active-low logic, and combine the results into the six-bit device state.</td>
-          </tr>
-          <tr>
-            <td>Device interface</td>
-            <td><code>struct file_operations</code>, <code>copy_to_user</code></td>
-            <td>Connect the device <code>read()</code> callback and return the formatted <code>OBTN XX</code> line to user space.</td>
-          </tr>
-          <tr>
-            <td>Register device</td>
-            <td><code>misc_register</code>, <code>misc_deregister</code></td>
-            <td>Create and remove <code>/dev/overbug_buttons</code> with a dynamically assigned minor number.</td>
-          </tr>
-          <tr>
-            <td>Errors and cleanup</td>
-            <td><code>IS_ERR</code>, <code>PTR_ERR</code>, <code>pr_err</code>, <code>gpiochip_free_own_desc</code>, <code>gpio_device_put</code></td>
-            <td>Report failures and release every resource that was already acquired.</td>
-          </tr>
-        </tbody>
-      </table>
-
-      <h3>Driver skeleton</h3>
-      <p>
-        This outline shows the required order of responsibility. Replace the
-        comments with your own implementation; it is not a complete driver.
-      </p>
-      <pre><code>/* 1. Include kernel headers, define device-state masks,
- *    declare module parameters, and describe one control. */
-
-struct overbug_button {
-    /* control name, chosen BCM GPIO number, state bit, descriptor */
-};
-
-/* 2. Find the GPIO chip, request each input descriptor, and remember
- *    how many descriptors were acquired for failure cleanup. */
-
-static u8 overbug_read_mask(void)
-{
-    /* Read every descriptor with gpiod_get_value().
-     * Apply active-low logic and OR the matching state bits. */
-}
-
-static ssize_t overbug_buttons_read(/* file, user buffer, size, offset */)
-{
-    /* Build one "OBTN XX\n" line from the current mask.
-     * Reject a too-small user buffer, then use copy_to_user(). */
-}
-
-/* 3. Put the read callback in struct file_operations and expose it
- *    through a miscdevice named "overbug_buttons". */
-
-static int __init overbug_buttons_init(void)
-{
-    /* Configure the six controls, find the chip, request descriptors,
-     * then call misc_register() only after GPIO setup succeeds.
-     * On failure, release every descriptor acquired so far. */
-}
-
-static void __exit overbug_buttons_exit(void)
-{
-    /* misc_deregister(), free every descriptor, then gpio_device_put(). */
-}
-
-module_init(overbug_buttons_init);
-module_exit(overbug_buttons_exit);</code></pre>
-
-      <div class="callout info">
-        <strong>Resource lifecycle</strong>
-        Every successful GPIO descriptor request must have a matching release.
-        If initialization fails partway through, undo only the resources that
-        were acquired so far. Register the character device only after all GPIO
-        inputs are ready.
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>4. What you implement</h2>
+      <h2>3. What you implement</h2>
       <p>
         The interfaces are provided by the lab. Your job is to make the
         student-owned files agree with both sides of each contract.
@@ -439,7 +329,7 @@ module_exit(overbug_buttons_exit);</code></pre>
     </section>
 
     <section class="panel">
-      <h2>5. Build and run</h2>
+      <h2>4. Build and run</h2>
       <h3>On the Raspberry Pi</h3>
       <p>Build the module, verify one device-state line, then start the reader:</p>
       <pre><code>cd Lab2
@@ -475,7 +365,7 @@ make clean</code></pre>
     </section>
 
     <section class="panel">
-      <h2>6. QA</h2>
+      <h2>5. QA</h2>
 
       <h3>Questions</h3>
       <ol>

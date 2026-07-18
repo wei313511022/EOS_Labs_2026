@@ -126,7 +126,7 @@
             <li>Soldering pauses if the player leaves or releases the key.</li>
             <li>Inspection is automatic and takes about 4 seconds.</li>
             <li>Only boards matching an order can be shipped successfully.</li>
-            <li>Wrong or unwanted boards can be recycled without losing points.</li>
+            <li>Wrong or unwanted unlocked boards can be recycled without losing points; a passed board must ship.</li>
           </ul>
         </div>
       </div>
@@ -169,7 +169,7 @@
         <a class="lab-card" href="lab3.html">
           <span class="lab-tag">Lab 3</span>
           <h3>Concurrent Multiplayer Server</h3>
-          <p>Use threads, mutexes, and semaphores to coordinate two to four Raspberry Pi players.</p>
+          <p>Choose and justify a race-safe design for two to four Raspberry Pi players.</p>
           <span class="card-link">Open lab <span aria-hidden="true">→</span></span>
         </a>
       </div>
@@ -227,8 +227,10 @@
           <div class="file-chips" aria-label="Lab 3 files">
             <code>lab3.html</code>
             <code>Lab3/server.c (student)</code>
-            <code>pthread</code>
-            <code>sem_t</code>
+            <code>Lab3/player.py</code>
+            <code>Lab3/overbug_world.h</code>
+            <code>architecture choice</code>
+            <code>process / thread / IPC</code>
             <code>players 2–4</code>
           </div>
         </article>
