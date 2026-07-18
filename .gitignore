@@ -2,3 +2,10 @@ __pycache__/
 *.py[cod]
 *.bak
 game/native/build/
+
+# Local tooling, deployment output, and non-distribution materials.
+.openai/
+.vscode/
+game/
+site/
+dist/
