@@ -41,12 +41,12 @@
       </div>
     </section>
 
-    <section class="course-stats" aria-label="Course at a glance">
+    <!-- <section class="course-stats" aria-label="Course at a glance">
       <div><strong>4</strong><span>progressive labs</span></div>
       <div><strong>1</strong><span>shared game system</span></div>
       <div><strong>2–4</strong><span>multiplayer Pi controls</span></div>
       <div><strong>0 → 3</strong><span>from setup to concurrency</span></div>
-    </section>
+    </section> -->
 
     <section class="panel intro-panel" id="course">
       <div class="section-heading">
@@ -177,12 +177,12 @@
 
     <section class="panel flow-panel">
       <div class="section-heading">
-        <p class="section-label">Architecture in context</p>
+        <p class="section-label">Runtime workflow</p>
         <h2>See how the pieces fit.</h2>
       </div>
       <p class="section-intro">
-        Each lab contributes one layer to the Overbug system, from setup and
-        kernel observation to a concurrent multiplayer Raspberry Pi-to-PC game path.
+        Follow one button press through the complete Overbug runtime, from the
+        physical controller to the game display.
       </p>
 
       <div class="lab-flow" aria-label="Lab design flow">
@@ -190,25 +190,25 @@
           <span class="flow-kicker">Lab 0</span>
           <h3>Setup</h3>
           <p>Build the development path: Ubuntu VM, Raspberry Pi OS, networking, and SSH.</p>
-          <div class="file-chips" aria-label="Lab 0 files">
+          <!-- <div class="file-chips" aria-label="Lab 0 files">
             <code>lab0.html</code>
-          </div>
+          </div> -->
         </article>
 
         <article class="flow-step">
           <span class="flow-kicker">Lab 1</span>
           <h3>System Call</h3>
           <p>Add a kernel observation point with <code>task_snapshot</code>.</p>
-          <div class="file-chips" aria-label="Lab 1 files">
+          <!-- <div class="file-chips" aria-label="Lab 1 files">
             <code>lab1.html</code>
-          </div>
+          </div> -->
         </article>
 
         <article class="flow-step">
           <span class="flow-kicker">Lab 2</span>
           <h3><a href="lab2.html">GPIO Device-State Input</a></h3>
           <p>Convert GPIO values into <code>OBTN XX</code>, then send <code>OBIN</code> UDP input to the single-player game server.</p>
-          <div class="file-chips" aria-label="Lab 2 files">
+          <!-- <div class="file-chips" aria-label="Lab 2 files">
             <code>lab2.html</code>
             <code>driver.c (student)</code>
             <code>reader.c (student)</code>
@@ -217,14 +217,14 @@
             <code>OBTN XX</code>
             <code>OBIN packet</code>
             <code>player 1</code>
-          </div>
+          </div> -->
         </article>
 
         <article class="flow-step">
           <span class="flow-kicker">Lab 3</span>
           <h3><a href="lab3.html">Concurrent Multiplayer Server</a></h3>
           <p>Extend the server for multiple inputs, players, collisions, and synchronized game state.</p>
-          <div class="file-chips" aria-label="Lab 3 files">
+          <!-- <div class="file-chips" aria-label="Lab 3 files">
             <code>lab3.html</code>
             <code>Lab3/server.c (student)</code>
             <code>Lab3/player.py</code>
@@ -232,35 +232,66 @@
             <code>architecture choice</code>
             <code>process / thread / IPC</code>
             <code>players 2–4</code>
-          </div>
+          </div> -->
         </article>
 
         <article class="flow-step">
           <span class="flow-kicker">Game MVP</span>
           <h3>Playable Loop</h3>
           <p>Run orders, boards, components, soldering, inspection, shipping, and scoring.</p>
-          <div class="file-chips" aria-label="Game files">
+          <!-- <div class="file-chips" aria-label="Game files">
             <code>game/main.py</code>
             <code>game/data/lab_mvp.json</code>
             <code>game/overbug/*</code>
-          </div>
+          </div> -->
         </article>
       </div>
 
-      <div class="data-flow" aria-label="Runtime input data flow">
-        <strong>Lab 2 and Lab 3 input path</strong>
-        <div class="data-flow-track">
-          <span>physical controls</span>
-          <span>GPIO device state</span>
-          <span>driver.c</span>
-          <span>OBTN XX device</span>
-          <span>reader.c</span>
-          <span>OBIN UDP :17666</span>
-          <span>server.c</span>
-          <span>OBST JSON :17667</span>
-          <span>display.py</span>
+      <div class="home-workflow-map" aria-label="Overbug runtime workflow">
+        <div class="lab3-external">
+          <strong>Physical controls</strong>
+          <span>Six buttons produce GPIO input values.</span>
         </div>
+
+        <div class="lab3-arrow" aria-hidden="true">
+          <span>GPIO values</span>
+          <b>→</b>
+        </div>
+
+        <section class="lab3-server-boundary" aria-label="Programs that run on the Raspberry Pi">
+          <p class="lab3-server-title"><span>Runs on Raspberry Pi</span> <code>driver.c</code> and <code>reader.c</code></p>
+          <div class="lab3-server-jobs">
+            <article>
+              <strong><code>driver.c</code></strong>
+              <span>Read GPIO values and expose <code>OBTN XX</code> through device node.</span>
+            </article>
+            <article>
+              <strong><code>reader.c</code></strong>
+              <span>Read the device state and send the six-byte <code>OBIN</code> input packet.</span>
+            </article>
+          </div>
+        </section>
+
+        <div class="lab3-arrow" aria-hidden="true">
+          <span>OBIN UDP :17666</span>
+          <b>→</b>
+        </div>
+
+        <section class="lab3-server-boundary" aria-label="Programs that run on the PC or Ubuntu VM">
+          <p class="lab3-server-title"><span>Runs on PC or Ubuntu VM</span> <code>server.c</code> and <code>display.py</code></p>
+          <div class="lab3-server-jobs">
+            <article>
+              <strong><code>server.c</code></strong>
+              <span>Receive <code>OBIN</code>, update the game state, and send <code>OBST</code> on UDP port 17667.</span>
+            </article>
+            <article>
+              <strong><code>display.py</code></strong>
+              <span>Receive <code>OBST</code> and render the current game state.</span>
+            </article>
+          </div>
+        </section>
       </div>
+      <p class="section-intro"><code>overbug_protocol.h</code> is a shared definition, not a program to run; it keeps the <code>OBIN</code> packet layout identical on the Raspberry Pi and PC.</p>
     </section>
   </main>
 

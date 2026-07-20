@@ -50,12 +50,50 @@
 
     <section class="panel pipeline-panel">
       <h2>System overview</h2>
-      <p>
-        The interface names below are the contracts between each stage. Your
-        work is the two Raspberry Pi programs in blue.
-      </p>
+      <p>The rectangles identify the ownership boundaries and the contracts between each stage.</p>
 
-      <figure class="pipeline-figure">
+      <div class="lab3-system-map lab2-system-map" aria-label="Lab 2 device-state responsibilities">
+        <div class="lab3-external">
+          <strong>Physical controller</strong>
+          <span>Six controls become GPIO input values on the Raspberry Pi.</span>
+        </div>
+
+        <div class="lab3-arrow" aria-hidden="true">
+          <span>GPIO values</span>
+          <b>→</b>
+        </div>
+
+        <section class="lab3-server-boundary" aria-label="Student responsibilities in Lab 2">
+          <p class="lab3-server-title"><span>Student work</span> <code>driver.c</code> and <code>reader.c</code></p>
+          <div class="lab3-server-jobs">
+            <article>
+              <strong>Read GPIO</strong>
+              <span><code>driver.c</code> combines the six input values into a button mask.</span>
+            </article>
+            <article>
+              <strong>Device state</strong>
+              <span>Publish <code>OBTN XX</code> through device node.</span>
+            </article>
+            <article>
+              <strong>Send input</strong>
+              <span><code>reader.c</code> sends the <code>OBIN</code> packet on UDP port 17666.</span>
+            </article>
+          </div>
+        </section>
+
+        <div class="lab3-arrow" aria-hidden="true">
+          <span>OBIN UDP :17666</span>
+          <b>→</b>
+        </div>
+
+        <div class="lab3-external">
+          <strong>Provided PC programs</strong>
+          <span><code>server.c</code> handles player 1, then sends <code>OBST</code> UDP :17667 to <code>display.py</code>.</span>
+        </div>
+      </div>
+      <p class="section-intro">The centre rectangle is the Lab 2 implementation boundary. Lab 3 expands the provided server into the next student-owned boundary.</p>
+
+      <figure class="pipeline-figure" hidden>
         <div class="pipeline-viewport">
           <svg class="pipeline-svg" viewBox="0 0 1200 560" role="img" aria-labelledby="pipeline-title pipeline-desc">
             <title id="pipeline-title">Overbug Lab 2 device-state pipeline</title>
@@ -372,6 +410,7 @@ make clean</code></pre>
         <li>What is a driver? Explain the relationship between GPIO, driver, driver table, device, and device table.</li>
         <li>Simply introduce the 40 pins on the RPi. Which pins do you use in this lab?</li>
         <li>Which GPIO APIs request, read, and release your GPIO pins?</li>
+        <li>What do <code>copy_to_user()</code> and <code>copy_from_user()</code> do, and why must a driver use them instead of directly dereferencing a user-space pointer?</li>
         <li>What is switch bounce, and how can a polling driver reduce it?</li>
         <li>What are the major and minor numbers of /dev/overbug_buttons, and how are they assigned?</li>
         <li>What other insights do you gain from this lab?</li>

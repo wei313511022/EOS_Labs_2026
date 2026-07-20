@@ -705,6 +705,18 @@ pre code {
   margin-top: 18px;
 }
 
+.home-workflow-map {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) auto minmax(0, 1.5fr) auto minmax(0, 1.5fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.home-workflow-map .lab3-server-jobs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .lab3-external {
   display: grid;
   gap: 6px;
@@ -1184,6 +1196,15 @@ button:focus-visible {
   }
 
   .lab3-system-map {
+    grid-template-columns: 1fr;
+  }
+
+  .home-workflow-map {
+    grid-template-columns: 1fr;
+  }
+
+  .lab3-server-jobs,
+  .home-workflow-map .lab3-server-jobs {
     grid-template-columns: 1fr;
   }
 

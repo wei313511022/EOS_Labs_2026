@@ -353,11 +353,9 @@ python3 player.py --server 127.0.0.1</code></pre>
         <li>Present a flowchart of your server design. Identify input handling, the authoritative game-state owner, synchronization, snapshot creation, and output to <code>display.py</code>.</li>
         <li>Which concurrency architecture did you choose: an event loop, threads, processes, or a combination? Justify the choice against the alternatives.</li>
         <li>Identify your critical sections. Explain how your design prevents races when players access shared facilities, items, orders, scores, and snapshots.</li>
-        <li>If one player stops sending <code>OBIN</code> packets, how does the server detect the problem and how does the game continue for the remaining players?</li>
         <li>Where is the authoritative game state stored, and how is state transferred between components? Explain the role of in-process memory, shared memory, pipes, or message queues in your design.</li>
         <li>Should the authoritative game state use a memory pool? Justify your answer based on the fixed numbers of players, stations, and orders.</li>
-        <li>Suppose a new button rewinds the game state. Describe how you would store state history, select a previous state, and restore it without creating inconsistent shared state.</li>
-        <li>State one technical insight from this lab and explain how it would affect the design of a larger multiplayer system.</li>
+        <li>What other insights do you gain from this lab?</li>
       </ol>
     </section>
   </main>
