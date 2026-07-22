@@ -136,13 +136,14 @@
       <div class="section-heading split-heading">
         <div>
           <p class="section-label">The roadmap</p>
-          <h2>Build the system in four moves.</h2>
+          <h2>Build the system in five moves.</h2>
         </div>
         <p class="section-intro">Each lab delivers a working interface for the next one. Follow them in order for the smoothest path.</p>
       </div>
       <p class="section-intro">
         The labs grow the game from its development environment into kernel
-        observation, device-state input, and concurrent networked game control.
+        observation, device-state input, concurrent networked game control, and
+        event-driven timing.
       </p>
       <div class="card-grid">
         <a class="lab-card" href="lab0.html">
@@ -171,6 +172,13 @@
           <h3>Concurrent Multiplayer Server</h3>
           <p>Choose and justify a race-safe design for two to four Raspberry Pi players.</p>
           <span class="card-link">Open lab <span aria-hidden="true">→</span></span>
+        </a>
+
+        <a class="lab-card" href="lab4.html">
+          <span class="lab-tag">Lab 4</span>
+          <h3>Interrupts, Timers, and Signals</h3>
+          <p>Deliver debounced button events with SIGIO and advance the round and facilities on timers.</p>
+          <span class="card-link">Open lab <span aria-hidden="true">&rarr;</span></span>
         </a>
       </div>
     </section>
@@ -236,6 +244,12 @@
         </article>
 
         <article class="flow-step">
+          <span class="flow-kicker">Lab 4</span>
+          <h3><a href="lab4.html">Interrupt-Driven Timing</a></h3>
+          <p>Replace input polling with GPIO IRQs and SIGIO, then time the round, welders, and verifiers.</p>
+        </article>
+
+        <article class="flow-step">
           <span class="flow-kicker">Game MVP</span>
           <h3>Playable Loop</h3>
           <p>Run orders, boards, components, soldering, inspection, shipping, and scoring.</p>
@@ -263,11 +277,11 @@
           <div class="lab3-server-jobs">
             <article>
               <strong><code>driver.c</code></strong>
-              <span>Read GPIO values and expose <code>OBTN XX</code> through device node.</span>
+              <span>Debounce GPIO IRQs and expose changed <code>OBTN XX</code> device states.</span>
             </article>
             <article>
               <strong><code>reader.c</code></strong>
-              <span>Read the device state and send the six-byte <code>OBIN</code> input packet.</span>
+              <span>Wake on <code>SIGIO</code>, read the device state, and send the six-byte <code>OBIN</code> input packet.</span>
             </article>
           </div>
         </section>
@@ -282,7 +296,7 @@
           <div class="lab3-server-jobs">
             <article>
               <strong><code>server.c</code></strong>
-              <span>Receive <code>OBIN</code>, update the game state, and send <code>OBST</code> on UDP port 17667.</span>
+              <span>Receive <code>OBIN</code>, advance timed game state, and send <code>OBST</code> on UDP port 17667.</span>
             </article>
             <article>
               <strong><code>display.py</code></strong>

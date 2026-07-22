@@ -705,6 +705,14 @@ pre code {
   margin-top: 18px;
 }
 
+.lab4-system-map {
+  grid-template-columns: minmax(125px, 0.55fr) auto minmax(0, 1.7fr) auto minmax(0, 1.7fr);
+}
+
+.lab3-server-jobs.lab4-timed-facilities {
+  grid-template-columns: 1fr;
+}
+
 .home-workflow-map {
   display: grid;
   grid-template-columns: minmax(130px, 0.7fr) auto minmax(0, 1.5fr) auto minmax(0, 1.5fr);

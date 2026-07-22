@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Lab 4 for RTES913: EOS — interrupt-driven GPIO input and timed Overbug facilities.">
+  <title>Lab 4 - Interrupt-Driven Input and Timed Facilities</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="top-nav" aria-label="Main navigation">
+      <a class="brand" href="index.html">Overbug</a>
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="lab0.html">Lab 0</a>
+        <a href="lab1.html">Lab 1</a>
+        <a href="lab2.html">Lab 2</a>
+        <a href="lab3.html">Lab 3</a>
+        <a aria-current="page" href="lab4.html">Lab 4</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="hero lab-hero">
+      <p class="eyebrow">RTES913 - EOS - Overbug</p>
+      <h1>Lab 4: Interrupt-Driven Input and Timed Facilities</h1>
+      <p class="subtitle">
+        Turn a button edge into a debounced notification, then make the
+        Overbug round and workstations progress on independent timers.
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>Before you begin</h2>
+      <p>Lab 4 joins the GPIO driver from Lab 2 with your completed multiplayer server from Lab 3.</p>
+      <div class="callout warning">
+        <strong>Linux / Raspberry Pi OS only</strong>
+        Mission 1 uses a Linux kernel module, GPIO IRQs, and <code>SIGIO</code>. Mission 2 uses the
+        traditional POSIX interval timer, <code>setitimer()</code>, and <code>SIGALRM</code>. Windows support is not required.
+      </div>
+      <ul>
+        <li>Complete Lab 2's GPIO wiring and Lab 3's two-to-four-player server first.</li>
+        <li>Use one local <code>reader</code> process for each Raspberry Pi controller.</li>
+        <li>Keep the six-byte <code>OBIN</code> packet, UDP ports <code>17666</code>/<code>17667</code>, and <code>Lab2/display.py</code> unchanged.</li>
+        <li><code>Lab4/server.c</code> is intentionally a non-compiling reminder. Replace it with your completed Lab 3 server before Mission 2.</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>System overview</h2>
+      <div class="lab3-system-map lab4-system-map" aria-label="Lab 4 event path">
+        <div class="lab3-external">
+          <strong>Six physical buttons</strong>
+          <span>GPIO edges from one Raspberry Pi controller.</span>
+        </div>
+        <div class="lab3-arrow" aria-hidden="true">
+          <span>rising / falling IRQ</span>
+          <b>&rarr;</b>
+        </div>
+        <section class="lab3-server-boundary" aria-label="Student-owned Lab 4 driver and reader">
+          <p class="lab3-server-title"><span>Mission 1</span> <code>driver.c</code> + <code>reader.c</code></p>
+          <div class="lab3-server-jobs">
+            <article><strong>IRQ</strong><span>Schedule one delayed debounce timer.</span></article>
+            <article><strong>Timer</strong><span>Read stable GPIO state and publish only changes.</span></article>
+            <article><strong>SIGIO</strong><span>Wake the reader, which sends <code>OBIN</code>.</span></article>
+          </div>
+        </section>
+        <div class="lab3-arrow" aria-hidden="true">
+          <span>OBIN UDP :17666</span>
+          <b>&rarr;</b>
+        </div>
+        <section class="lab3-server-boundary" aria-label="Student-owned Lab 4 timed server">
+          <p class="lab3-server-title"><span>Mission 2</span> <code>server.c</code></p>
+          <div class="lab3-server-jobs lab4-timed-facilities">
+            <article><strong>Timed facilities</strong><span>Use each 50 ms tick to move held inputs and advance the round, three welders, and two verifiers.</span></article>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>1. Mission 1 — replace polling with IRQ, timer, and signal</h2>
+      <p>
+        The device name and text protocol do not change: <code>/dev/overbug_buttons</code> still returns
+        <code>OBTN XX\n</code>. What changes is <em>when</em> the reader receives it. Remove the Lab 2
+        <code>--hz</code> option and all fixed-rate sleep logic.
+      </p>
+      <pre><code>GPIO edge
+  -&gt; IRQ handler: wake the shared debounce timer
+  -&gt; timer callback: read six GPIO values and compare stable mask
+  -&gt; changed mask: store state, wake wait queue, signal SIGIO to reader
+  -&gt; reader SIGIO handler: wake the event loop
+  -&gt; reader read(): OBTN XX, then send one OBIN UDP packet</code></pre>
+
+      <h3>Driver contract</h3>
+      <table>
+        <thead><tr><th>Component</th><th>Required behavior</th></tr></thead>
+        <tbody>
+          <tr><td>GPIO setup</td><td>Request all six lines as inputs.</td></tr>
+          <tr><td>IRQ</td><td>Request both rising and falling edges for every line. The handler must not read GPIO or notify userspace; it only restarts the shared debounce timer.</td></tr>
+          <tr><td>Debounce timer</td><td>Use one <code>timer_list</code> and the read-only module parameter <code>debounce_ms</code>, defaulting to 20. The callback reads the complete mask and publishes it only if it differs from the last delivered mask.</td></tr>
+          <tr><td>Device read</td><td>A normal <code>read()</code> blocks until a changed debounced mask is ready.</td></tr>
+          <tr><td>Notification</td><td>Implement a wait queue. Store the new state first, then call <code>wake_up_interruptible()</code> and <code>kill_fasync(..., SIGIO, POLL_IN)</code>.</td></tr>
+          <tr><td>Cleanup</td><td>On unload: prevent new opens, deregister the device, stop the timer permanently with <code>timer_shutdown_sync()</code>, free all IRQs/GPIO descriptors, and release the GPIO reference.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Reader contract</h3>
+      <p>
+        The reader is an event bridge, not a polling loop. <code>SIGIO</code> is a <strong>doorbell</strong> that
+        means “the device may have a new state”; it does not contain the button mask. The reader obtains the
+        authoritative state with <code>read()</code>, converts <code>OBTN XX\n</code> into the six-byte
+        <code>OBIN</code> packet, and sends it to the game server.
+      </p>
+      <pre><code>driver stores a changed stable mask
+  -&gt; driver sends SIGIO                 (doorbell only)
+  -&gt; reader handler sets a flag         (no read or UDP here)
+  -&gt; reader event loop reads OBTN XX    (real button data)
+  -&gt; reader sends OBIN to the server</code></pre>
+      <ul>
+        <li><strong>Prepare safely:</strong> block <code>SIGIO</code>, then install <code>sigaction(SIGIO)</code>. Its handler performs exactly one async-signal-safe action: set a <code>volatile sig_atomic_t</code> notification flag.</li>
+        <li><strong>Subscribe to the device:</strong> open with <code>O_NONBLOCK</code>, use <code>fcntl(fd, F_SETOWN, getpid())</code> to name this reader as the signal recipient, then enable <code>O_ASYNC | O_NONBLOCK</code>. <code>O_ASYNC</code> permits the driver's <code>kill_fasync()</code> call to deliver <code>SIGIO</code>; <code>O_NONBLOCK</code> makes an empty <code>read()</code> return <code>EAGAIN</code> rather than sleep.</li>
+        <li><strong>Drain before sleeping:</strong> while <code>SIGIO</code> remains blocked, read and send every available <code>OBTN</code> state until <code>read()</code> returns <code>EAGAIN</code>. Signals can merge, so the device read—not the number of signals—is the source of truth.</li>
+        <li><strong>Sleep without a race:</strong> after draining, call <code>sigsuspend()</code> with the old signal mask. It atomically unblocks <code>SIGIO</code> and sleeps. A button event therefore cannot arrive between “the queue is empty” and “the reader is asleep.”</li>
+        <li><strong>Initialize server state:</strong> send a zero-mask packet once at startup to clear stale server movement. After that, send one <code>OBIN</code> packet for each state returned by the device.</li>
+      </ul>
+      <pre><code>block SIGIO; install handler; enable O_ASYNC
+send OBIN(0) once
+for (;;) {
+    sigio_received = 0;
+    while (read(device) returns OBTN XX)
+        send OBIN(XX);
+    /* read() returned EAGAIN; SIGIO is still blocked here */
+    while (!sigio_received)
+        sigsuspend(&amp;old_mask);    /* unblock SIGIO and sleep atomically */
+}</code></pre>
+
+      <h3>Build and exercise Mission 1</h3>
+      <pre><code>cd Lab4
+make module reader
+sudo insmod overbug_buttons.ko debounce_ms=20
+./reader --server &lt;PC_IP&gt; --player 1
+
+# In another terminal after testing
+sudo rmmod overbug_buttons</code></pre>
+      <p class="note">A held direction remains active at the server until the release edge sends a new mask. That is why the reader no longer needs a 60 Hz polling loop.</p>
+
+      <h3>Test IRQ and debounce delivery</h3>
+      <p>
+        <code>test.c</code> opens the device through the same <code>SIGIO</code> path as <code>reader.c</code>.
+        Stop <code>reader</code> first: the Lab 4 driver permits one device reader at a time.
+      </p>
+      <pre><code>cd Lab4
+make test
+
+# Terminal A: watch for kernel errors while testing
+sudo dmesg -w
+
+# Terminal B: press and release one button ten times in 30 seconds
+./test --duration 30 --expect 20
+
+# Verify that the GPIO IRQ counters increase
+grep overbug /proc/interrupts</code></pre>
+      <ul>
+        <li>Each line reports a debounced <code>OBTN</code> state, changed button names, and the gap since the previous delivered state.</li>
+        <li>The summary must show the expected number of events and zero duplicate masks.</li>
+        <li>The tool measures delivery times visible in userspace. It cannot measure the electrical edge-to-IRQ latency without external hardware instrumentation.</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>2. Mission 2 — timed multiplayer facilities</h2>
+      <p>
+        Copy your final Lab 3 server into <code>Lab4/</code> first. Keep its multiplayer behavior and
+        synchronization design, then add the timing rules below. Do not copy the repository's Lab 3
+        starter unless it is your completed submission.
+      </p>
+      <pre><code>cd Lab4
+cp /path/to/your/completed/Lab3/server.c server.c
+make server</code></pre>
+
+      <h3>Required interval timer</h3>
+      <p>
+        Configure <code>setitimer(ITIMER_REAL, ...)</code> for a repeating 50 ms interval and install a
+        <code>sigaction(SIGALRM)</code> handler. The handler is only a wake-up mechanism: it may set one
+        <code>volatile sig_atomic_t</code> flag or write one byte to a self-pipe, but it must not move players,
+        update facilities, send snapshots, lock a mutex, or call <code>printf()</code>.
+      </p>
+      <p>
+        <code>SIGALRM</code> is a standard signal, so several expirations may be merged into one delivered
+        signal while the server is busy. In normal server code, use <code>clock_gettime(CLOCK_MONOTONIC, ...)</code>
+        to calculate how many complete 50 ms intervals have elapsed since the last update. Apply every elapsed
+        interval before publishing the next snapshot. Store countdowns as integer milliseconds, not floating-point
+        wall-clock values.
+      </p>
+      <pre><code>static volatile sig_atomic_t alarm_pending;
+
+static void on_sigalrm(int signum)
+{
+    (void)signum;
+    alarm_pending = 1;       /* async-signal-safe: wake normal server code */
+}
+
+/* Normal server code, never the signal handler: */
+elapsed_ticks = monotonic_elapsed_ms_since_last_update() / 50;
+for (i = 0; i &lt; elapsed_ticks; ++i)
+    advance_one_50_ms_game_tick();
+alarm_pending = 0;</code></pre>
+
+      <h3>Continuous movement from event-driven input</h3>
+      <p>
+        A held direction button must keep a player moving, but the reader must <strong>not</strong> send repeated
+        UDP packets while it is held. The driver generates an event only for the debounced press and release.
+        On receiving <code>OBIN</code>, save that player's newest six-bit button mask. On every 50 ms timer
+        expiration, move each player according to the saved mask. A release packet clears the direction and the
+        next tick stops movement.
+      </p>
+      <pre><code>reader:  press Right -&gt; OBIN(Right) ---------------- release -&gt; OBIN(no Right)
+server:                save Right mask                         clear Right mask
+50 ms tick:            move -&gt; move -&gt; move -&gt; move -&gt; stop</code></pre>
+      <p>
+        Therefore, replace any Lab 3 logic that moves a player once per received input packet. The UDP input
+        handler only updates the stored mask; the timer owner applies movement and facility time. This keeps
+        held movement smooth without turning the reader back into a polling sender.
+      </p>
+      <table>
+        <thead><tr><th>Timed object</th><th>Start and pause rule</th><th>Completion</th></tr></thead>
+        <tbody>
+          <tr><td>Round</td><td>Start at <code>180000</code> ms and decrement on every timer expiration.</td><td>Clamp at zero, set <code>game_over=true</code>, freeze movement/interactions/facility work, but keep sending snapshots.</td></tr>
+          <tr><td>Each welder</td><td>After it contains a board and pending material, start at <code>2000</code> ms. Decrement only while at least one nearby player holds Solder; otherwise pause.</td><td>Add exactly one pending material to the board, clear that material, reset displayed progress, and mark the board ready to test.</td></tr>
+          <tr><td>Each verifier</td><td>When a board is placed, start at <code>4000</code> ms and decrement automatically. The board cannot be picked up while the timer is active.</td><td>Evaluate the order at completion, then mark the board passed/failed. Lock an order only for a passed board.</td></tr>
+          <tr><td>Other facilities</td><td>Material bins, intake, tables, shipping, and trash remain instantaneous.</td><td>No artificial timer or new packet field.</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Snapshot compatibility</h3>
+      <ul>
+        <li>Keep <code>OBST</code>, all fixed station IDs, the player list, orders, score fields, and ports unchanged.</li>
+        <li>Make the existing <code>remaining_ms</code> value live. At round end it must be exactly zero.</li>
+        <li>Keep existing welder/verifier <code>progress</code> fields. Derive each as <code>1.0 - remaining_ms / duration_ms</code>, clamped to <code>0.0..1.0</code>.</li>
+        <li>Do not add timers to the 11 instantaneous facilities and do not modify <code>Lab2/display.py</code>.</li>
+      </ul>
+
+      <h3>Optional challenge — a <code>select()</code> event loop</h3>
+      <p>
+        This is optional. If you choose it, one process owns the authoritative game state and blocks on both the
+        input UDP socket and the read end of a nonblocking self-pipe. The <code>SIGALRM</code> handler writes a
+        byte to the pipe, so <code>select()</code> wakes for both UDP input and the interval timer without a
+        check-then-sleep race.
+      </p>
+      <pre><code>/* alarm handler: (void)write(tick_pipe[1], "T", 1); */
+FD_ZERO(&amp;read_fds);
+FD_SET(input_sock, &amp;read_fds);
+FD_SET(tick_pipe[0], &amp;read_fds);
+
+if (select(max_fd + 1, &amp;read_fds, NULL, NULL, NULL) &gt;= 0) {
+    if (FD_ISSET(input_sock, &amp;read_fds))
+        receive_all_valid_obin_packets(...);
+    if (FD_ISSET(tick_pipe[0], &amp;read_fds))
+        drain_tick_pipe(...);
+    advance_game_for_all_elapsed_50_ms_ticks(...);
+    publish_current_obst_snapshot(...);
+}</code></pre>
+      <p>Students retaining their Lab 3 thread/process design may integrate <code>SIGALRM</code> within that design instead. In a threaded server, block <code>SIGALRM</code> before creating worker threads and designate one timer owner. Document who owns timer updates and how it prevents races with input and snapshots.</p>
+    </section>
+
+    <section class="panel">
+      <h2>3. Verify before submitting</h2>
+      <ol>
+        <li>Build <code>make module reader</code>. Confirm the reader help has no <code>--hz</code> option.</li>
+        <li>Press and release one button. Confirm one stable state update per edge; deliberately bouncing a button must not create extra delivered states.</li>
+        <li>Confirm the reader receives <code>SIGIO</code>, reads the device, and sends no periodic idle UDP packets.</li>
+        <li>Unload the module both while idle and after the reader exits. There must be no active timer/IRQ callback or kernel warning.</li>
+        <li>Run two to four players with the unchanged display. The HUD must count down from 03:00 to 00:00 and then display game over.</li>
+        <li>Hold one movement button: the player must continue moving on successive 50 ms ticks, with only one press packet and one release packet from the reader.</li>
+        <li>At a welder, verify that progress rises only during nearby held Solder, pauses after release/exit, and completes after 2 s of accumulated work.</li>
+        <li>At a verifier, verify automatic 4 s progress, blocked early pickup, and correct pass/fail resolution.</li>
+        <li>Operate separate welders/verifiers simultaneously. Each countdown must advance independently with no lost input or corrupted station state.</li>
+        <li>If completing the optional challenge, show that <code>select()</code> wakes for the self-pipe timer event and UDP input without a <code>sleep_ms()</code>-based loop.</li>
+      </ol>
+    </section>
+
+    <section class="panel">
+      <h2>4. Submission and questions</h2>
+      <ul>
+        <li>Submit your modified <code>Lab4/driver.c</code>, <code>reader.c</code>, copied-and-modified <code>server.c</code>, Makefile, and a short test record.</li>
+        <li>Include a diagram of the IRQ &rarr; timer &rarr; <code>SIGIO</code> path and identify which operations are safe in IRQ, timer, and signal-handler contexts.</li>
+        <li>Explain why <code>sigsuspend()</code> is safer than checking a flag and then calling <code>pause()</code>.</li>
+        <li>Explain how your timer ownership prevents two players or two facilities from racing on shared state.</li>
+        <li>Explain why <code>SIGALRM</code> is only a wake-up and how your monotonic-clock calculation recovers merged timer signals.</li>
+        <li>If you chose <code>select()</code>, explain how the self-pipe replaces the old polling/sleep loop and how you drain it safely.</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <a href="lab3.html">Previous: Lab 3</a> &middot; <a href="index.html">Home</a>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
