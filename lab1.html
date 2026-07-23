@@ -32,24 +32,23 @@
     </section>
 
     <section class="panel">
-      <h2>Purpose</h2>
+      <h2>Before you begin</h2>
+      <p>Before starting this lab, make sure you have:</p>
       <ul>
-        <li>Understand what a system call is.</li>
-        <li>Add one new system call to the Raspberry Pi Linux kernel.</li>
-        <li>Use the system call to observe runtime behavior.</li>
+        <li>an Ubuntu build environment with the ARM64 cross-compiler installed;</li>
+        <li>a Raspberry Pi and boot media that you can use to test a rebuilt kernel; and</li>
       </ul>
-    </section>
+      <p>This lab assumes you understand:</p>
+      <ul>
+        <li>User space vs kernel space: normal programs run in user space; privileged OS code runs in kernel space.</li>
+        <li>System call: a controlled entry point for a user program to request kernel service.</li>
+        <li>C struct: a fixed layout used to return several measurements together.</li>
+        <li>Pointer safety: the kernel must carefully copy data back to user memory.</li>
+        <li>Kernel build workflow: modify kernel code, rebuild, install, reboot, then test.</li>
+        <li><code>copy_to_user()</code>: a kernel helper used to safely copy data back to a user program.</li>
+      </ul>
 
-    <section class="panel">
-      <h2>What students should know first</h2>
-      <ul>
-        <li><strong>User space vs kernel space:</strong> normal programs run in user space; privileged OS code runs in kernel space.</li>
-        <li><strong>System call:</strong> a controlled entry point for a user program to request kernel service.</li>
-        <li><strong>C struct:</strong> a fixed layout used to return several measurements together.</li>
-        <li><strong>Pointer safety:</strong> the kernel must carefully copy data back to user memory.</li>
-        <li><strong>Kernel build workflow:</strong> modify kernel code, rebuild, install, reboot, then test.</li>
-        <li><strong><code>copy_to_user()</code>:</strong> a kernel helper used to safely copy data back to a user program.</li>
-      </ul>
+      <p>By the end, you will add a small system call to Linux, rebuild and boot the kernel, and call the new interface from a user-space C program.</p>
 
       <div class="callout info">
         <strong>Simple model for Lab 1</strong>
@@ -164,10 +163,11 @@ sudo apt install -y git bc bison flex libssl-dev make libc6-dev libncurses5-dev 
       <h2>Step 2: Get the Raspberry Pi kernel source</h2>
       <p>
         Clone the Raspberry Pi Linux kernel. This handout uses the
-        <code>rpi-6.12.y</code> branch.
+        <code>rpi-6.1.y</code> branch so the later GPIO labs can demonstrate the
+        legacy integer-based GPIO API.
       </p>
 
-      <pre><code>git clone --depth=1 --branch rpi-6.12.y https://github.com/raspberrypi/linux.git
+      <pre><code>git clone --depth=1 --branch rpi-6.1.y https://github.com/raspberrypi/linux.git
 cd linux</code></pre>
     </section>
 
@@ -282,13 +282,23 @@ SYSCALL_DEFINE1(task_snapshot, struct task_snapshot __user *, user_snapshot)
 asmlinkage long sys_task_snapshot(struct task_snapshot __user *user_snapshot);</code></pre>
 
       <h3>Add the syscall table entry</h3>
-      <p>Add this line to <code>scripts/syscall.tbl</code>:</p>
-      <pre><code>463 common task_snapshot sys_task_snapshot</code></pre>
+      <p>
+        Linux 6.1 registers generic ARM64 system calls in
+        <code>include/uapi/asm-generic/unistd.h</code>. Immediately before the
+        existing <code>#undef __NR_syscalls</code> line, add:
+      </p>
+      <pre><code>#define __NR_task_snapshot 451
+__SYSCALL(__NR_task_snapshot, sys_task_snapshot)</code></pre>
+
+      <p>Then change the syscall count from 451 to 452:</p>
+      <pre><code>#undef __NR_syscalls
+#define __NR_syscalls 452</code></pre>
 
       <div class="callout warning">
         <strong>Check before editing.</strong>
-        If your kernel source already uses syscall number <code>463</code>, ask the
-        TA before choosing another number.
+        Confirm that the last assigned number is <code>450</code> and that
+        <code>__NR_syscalls</code> is <code>451</code> before using syscall number
+        <code>451</code>. If they differ, ask the TA before choosing another number.
       </div>
     </section>
 
@@ -306,12 +316,27 @@ echo "$KREL"</code></pre>
     <section class="panel">
       <h2>Step 8: Install to the Raspberry Pi SD card</h2>
       <p>
-        Insert the Raspberry Pi SD card into the VM or host. Replace the mount
-        paths below with the actual boot and root filesystem paths on your machine.
+        Insert the Raspberry Pi SD card into the VM or host. The examples below
+        assume <code>/dev/sdb1</code> is the FAT boot partition and
+        <code>/dev/sdb2</code> is the Linux root partition. Use
+        <code>lsblk -f</code> first and replace those device names with the SD
+        card shown on your machine.
       </p>
 
-      <pre><code>BOOT=/media/$USER/bootfs
-ROOT=/media/$USER/rootfs</code></pre>
+      <h3>Mount the boot and root partitions</h3>
+      <pre><code>lsblk -f
+mkdir -p mnt/boot mnt/root
+sudo mount /dev/sdb1 mnt/boot
+sudo mount /dev/sdb2 mnt/root
+
+BOOT="$PWD/mnt/boot"
+ROOT="$PWD/mnt/root"</code></pre>
+
+      <div class="callout warning">
+        <strong>Check the device before mounting.</strong>
+        Do not assume that the SD card is always <code>/dev/sdb</code>. Mounting
+        the wrong partition can put the kernel files on the wrong disk.
+      </div>
 
       <h3>Install kernel modules</h3>
       <pre><code>STAGE="$PWD/stage-overbug-lab1"
@@ -325,6 +350,25 @@ sudo cp -a "$STAGE/lib/modules/$KREL" "$ROOT/lib/modules/"</code></pre>
       <h3>Install the kernel image</h3>
       <pre><code>sudo cp arch/arm64/boot/Image "$BOOT/kernel8-overbug-lab1.img"
 sudo cp "$BOOT/config.txt" "$BOOT/config.txt.before-overbug-lab1"</code></pre>
+
+      <h3>Install Device Tree blobs and overlays</h3>
+      <p>
+        The Raspberry Pi firmware loads these files before starting the kernel,
+        so install the Device Trees built from the same source tree as your
+        custom kernel.
+      </p>
+      <pre><code>sudo mkdir -p "$BOOT/overlays"
+sudo cp arch/arm64/boot/dts/broadcom/*.dtb "$BOOT/"
+sudo cp arch/arm64/boot/dts/overlays/*.dtb* "$BOOT/overlays/"
+sudo cp arch/arm64/boot/dts/overlays/README "$BOOT/overlays/"</code></pre>
+
+      <div class="callout warning">
+        <strong>Device Tree files are shared.</strong>
+        These commands replace the boot partition's existing base Device Trees
+        and overlays; they do not create a second, per-kernel copy. Keep the
+        SD card's original boot partition available if you later need to return
+        to its original Raspberry Pi OS kernel.
+      </div>
 
       <p>Add these lines near the end of <code>config.txt</code>:</p>
       <pre><code>[all]
@@ -348,11 +392,12 @@ sudo umount "$ROOT"</code></pre>
       <p>Boot the Raspberry Pi and connect through SSH.</p>
 
       <pre><code>ssh &lt;pi-username&gt;@&lt;raspberry-pi-ip&gt;
-uname -a</code></pre>
+uname -r</code></pre>
 
       <p>
-        The output should include <code>-overbug-lab1</code>. If it does not, the Pi
-        probably booted a different kernel image.
+        The output should begin with <code>6.1</code> and include
+        <code>-overbug-lab1</code>. If it does not, the Pi probably booted a
+        different kernel image.
       </p>
     </section>
 
@@ -360,7 +405,7 @@ uname -a</code></pre>
       <h2>Step 10: Write the user-space test program (by yourself)</h2>
       <p>
         On the Raspberry Pi, create <code>snapshot_test.c</code>. This program calls
-        syscall number <code>463</code> and prints the returned measurements.
+        syscall number <code>451</code> and prints the returned measurements.
       </p>
 
       <!-- <pre><code>#define _GNU_SOURCE
@@ -372,7 +417,7 @@ uname -a</code></pre>
 #include &lt;sys/syscall.h&gt;
 #include &lt;unistd.h&gt;
 
-#define SYS_TASK_SNAPSHOT 463
+#define SYS_TASK_SNAPSHOT 451
 
 struct task_snapshot {
     uint32_t pid;
@@ -483,7 +528,7 @@ int main(void)
         <tbody>
           <tr>
             <td><code>NULL</code> pointer test</td>
-            <td>Call <code>syscall(463, NULL)</code>.</td>
+            <td>Call <code>syscall(451, NULL)</code>.</td>
             <td>The call should fail and set <code>errno</code> to <code>EFAULT</code>.</td>
           </tr>
           <tr>
@@ -531,6 +576,65 @@ int main(void)
         <li>What other insights do you gain from this lab?</li>
       </ol>
     </section>
+
+    <section class="panel">
+      <h2>Appendix: Build a clean Linux 6.1 kernel for Labs 2 and 4</h2>
+      <p>
+        Lab 2 and Lab 4 should use a clean <code>rpi-6.1.y</code> source tree,
+        without the <code>task_snapshot</code> changes from this lab. Use a
+        separate clone so the Lab 1 and GPIO kernels do not overwrite each
+        other's modules or boot image.
+      </p>
+
+      <h3>Build the clean GPIO-lab kernel</h3>
+      <pre><code>cd ..
+git clone --depth=1 --branch rpi-6.1.y https://github.com/raspberrypi/linux.git linux-rpi-6.1-gpio
+cd linux-rpi-6.1-gpio
+
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- bcm2711_defconfig
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- Image modules dtbs
+
+KREL=$(make -s ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease)
+echo "$KREL"</code></pre>
+
+      <p>
+        Do not set <code>LOCALVERSION</code> for this clean build. It must keep
+        Raspberry Pi's original kernel release string so its modules and build
+        tree match exactly.
+      </p>
+
+      <h3>Install and select the clean kernel</h3>
+      <pre><code>BOOT=/media/$USER/bootfs
+ROOT=/media/$USER/rootfs
+STAGE="$PWD/stage-overbug-gpio"
+mkdir -p "$STAGE"
+
+make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+    INSTALL_MOD_PATH="$STAGE" INSTALL_MOD_STRIP=1 modules_install
+sudo cp -a "$STAGE/lib/modules/$KREL" "$ROOT/lib/modules/"
+
+sudo cp arch/arm64/boot/Image "$BOOT/kernel8-overbug-gpio.img"
+sudo mkdir -p "$BOOT/overlays"
+sudo cp arch/arm64/boot/dts/broadcom/*.dtb "$BOOT/"
+sudo cp arch/arm64/boot/dts/overlays/*.dtb* "$BOOT/overlays/"
+sudo cp arch/arm64/boot/dts/overlays/README "$BOOT/overlays/"</code></pre>
+
+      <p>
+        In <code>$BOOT/config.txt</code>, replace the Lab 1 kernel line with:
+      </p>
+      <pre><code>kernel=kernel8-overbug-gpio.img</code></pre>
+
+      <p>
+        After booting the Pi, <code>uname -r</code> should begin with
+        <code>6.1</code> and match the value of <code>$KREL</code> printed
+        during this build. When you build Lab 2 or Lab 4 modules in the VM,
+        use this clean source directory as the matching kernel build tree:
+      </p>
+      <pre><code>make -C /path/to/linux-rpi-6.1-gpio M="$PWD" \
+    ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- modules</code></pre>
+    </section>
+
     <section class="panel">
       <h2>Appendix: Restore the original kernel</h2>
       <p>

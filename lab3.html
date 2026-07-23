@@ -34,16 +34,26 @@
 
     <section class="panel">
       <h2>Before you begin</h2>
-      <p>This lab builds directly on Lab 2. You should be comfortable with C, UDP sockets, and the Lab 2 input pipeline.</p>
       <div class="callout warning">
         <strong>Linux/POSIX only</strong>
         Build and run the Lab 3 server on Ubuntu or Raspberry Pi OS. You may choose threads, processes, message passing, or shared memory where appropriate; Windows support is not required.
       </div>
+      <p>Before starting this lab, make sure you have:</p>
       <ul>
-        <li>Keep the six-byte <code>OBIN</code> input packet unchanged.</li>
-        <li>Reuse <code>Lab2/reader.c</code> on every Raspberry Pi, or use the shared <code>Lab3/player.py</code> keyboard simulator at home. Run <code>Lab2/display.py</code> on the PC.</li>
-        <li>Use the copied <code>Lab3/server.c</code> as your single-player starting point.</li>
+        <li>completed Lab 2 and confirmed that each controller can send a valid six-byte <code>OBIN</code> packet;</li>
+        <li>a PC running <code>Lab2/display.py</code>, plus Pi readers or the <code>Lab3/player.py</code> keyboard simulator; and</li>
+        <li>the provided <code>Lab3/server.c</code> copied as the starting point for your server.</li>
       </ul>
+      <p>This lab assumes you understand:</p>
+      <ul>
+        <li>basic C structs, loops, and functions;</li>
+        <li>UDP sockets for receiving input and sending data;</li>
+        <li>Multitasking: a computer can make progress on more than one job.</li>
+        <li>Shared-state safety: a protection of the critical section.</li>
+        <li>Inter-process communication (IPC): a way to exchange information.</li>
+        <li>the Lab 2 path from controller input to an <code>OBIN</code> packet.</li>
+      </ul>
+      <p>By the end, you will build a two-to-four-player game server that receives input safely, updates shared game state, and sends current <code>OBST</code> snapshots to the display.</p>
     </section>
 
     <section class="panel">
@@ -182,7 +192,7 @@
         <li>An Action rising edge operates the nearest facility within 54 pixels. An empty player picks up; a carrying player drops when that facility accepts the item.</li>
         <li>At a welder, place a raw, soldering, or ready board and then one material. A Solder rising edge near that welder immediately adds the material to the board.</li>
         <li>A verifier accepts a raw, soldering, or ready board and immediately passes it only when its resistor, capacitor, and inductor counts exactly match an unlocked order; otherwise it fails the board.</li>
-        <li>There are three active orders. Each needs 1-4 total components, with 0-2 of each type. Shipping a passed, locked board earns <code>10 + 5 x total required components</code> points and creates a replacement order.</li>
+        <li>There are three active orders. You may design your own method for generating the initial and replacement orders, but every order must follow this format and these rules: it has an ID, a <code>req:[resistor,capacitor,inductor]</code> requirement, and a <code>locked_board_id</code>; it needs 1-4 total components, with 0-2 of each type. Shipping a passed, locked board earns <code>10 + 5 x total required components</code> points and creates a replacement order.</li>
         <li>The overall timer stays at 180 seconds in every snapshot, but Lab 3 does not decrement it or end the game automatically. Press Esc to close the display session, then use Ctrl-C to stop the server. Recycling wrong or unwanted unlocked items increases <code>recycled</code> without a score penalty. A passed board locked to an order cannot enter recycle; it must go to shipping.</li>
       </ul>
       <div class="callout info">
@@ -351,7 +361,7 @@ python3 player.py --server 127.0.0.1</code></pre>
       <h2>7. QA</h2>
       <h3>Questions</h3>
       <ol>
-        <li>Present a flowchart of your server design. Identify input handling, the authoritative game-state owner, synchronization, snapshot creation, and output to <code>display.py</code>.</li>
+        <!-- <li>Present a flowchart of your server design. Identify input handling, the authoritative game-state owner, synchronization, snapshot creation, and output to <code>display.py</code>.</li> -->
         <li>Which concurrency architecture did you choose: an event loop, threads, processes, or a combination? Justify the choice against the alternatives.</li>
         <li>Identify your critical sections. Explain how your design prevents races when players access shared facilities, items, orders, scores, and snapshots.</li>
         <li>Where is the authoritative game state stored, and how is state transferred between components? Explain the role of in-process memory, shared memory, pipes, or message queues in your design.</li>

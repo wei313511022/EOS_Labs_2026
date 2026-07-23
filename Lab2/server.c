@@ -1,10 +1,12 @@
 #define _POSIX_C_SOURCE 200809L
 
 /*
- * Overbug Lab 2 server.
+ * Overbug Lab 3 starter server.
  *
- * Runs on the PC. It receives input packets from reader.c, computes the game
- * state, and sends JSON snapshots to display.py.
+ * This is the Lab 2 single-player baseline. Refactor it into a Linux/POSIX
+ * server for two to four concurrent players. Choose and justify an
+ * architecture that safely coordinates input, game updates, and display
+ * output. Keep the OBIN input-packet contract unchanged.
  */
 
 #include <errno.h>
@@ -19,6 +21,7 @@
 #include <time.h>
 
 #include "overbug_protocol.h"
+#include "overbug_world.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -43,11 +46,6 @@ typedef int ob_socket_t;
 #define DISPLAY_PORT_DEFAULT 17667
 #define DISPLAY_HOST_DEFAULT "127.0.0.1"
 
-#define MAP_X 70.0f
-#define MAP_Y 96.0f
-#define MAP_W 1140.0f
-#define MAP_H 540.0f
-
 #define PLAYER_RADIUS 18.0f
 #define PLAYER_SPEED 185.0f
 #define INTERACT_DISTANCE 54.0f
@@ -55,7 +53,7 @@ typedef int ob_socket_t;
 #define SOLDER_SECONDS 2.0f
 #define INSPECTION_SECONDS 4.0f
 #define ORDER_COUNT 3
-#define MAX_STATIONS 16
+#define MAX_STATIONS OB_FACILITY_COUNT
 #define SNAPSHOT_BYTES 32768
 
 #define OB_BTN_UP      0x01
@@ -64,13 +62,6 @@ typedef int ob_socket_t;
 #define OB_BTN_RIGHT   0x08
 #define OB_BTN_ACTION  0x10
 #define OB_BTN_SOLDER  0x20
-
-enum component {
-	COMP_RESISTOR = 0,
-	COMP_CAPACITOR = 1,
-	COMP_INDUCTOR = 2,
-	COMP_COUNT = 3
-};
 
 enum item_kind {
 	ITEM_NONE = 0,
@@ -82,19 +73,8 @@ enum board_state {
 	BOARD_RAW = 0,
 	BOARD_SOLDERING,
 	BOARD_READY_TO_TEST,
-	BOARD_TESTING,
 	BOARD_PASSED,
 	BOARD_FAILED
-};
-
-enum station_type {
-	ST_MATERIAL_BIN = 0,
-	ST_INTAKE,
-	ST_TABLE,
-	ST_WELDER,
-	ST_VERIFIER,
-	ST_SHIPPING,
-	ST_TRASH
 };
 
 struct board {
@@ -141,8 +121,8 @@ struct player {
 
 struct game {
 	/*
-	 * Lab 2 intentionally models one player.  Lab 3 extends this field into
-	 * player storage for multiple connected players.
+	 * Lab 3 starting point: replace this field with storage for two to four
+	 * active players, coordinated by the design you choose.
 	 */
 	struct player player;
 	struct station stations[MAX_STATIONS];
@@ -188,8 +168,6 @@ static const char *board_state_name(enum board_state state)
 		return "soldering";
 	case BOARD_READY_TO_TEST:
 		return "ready_to_test";
-	case BOARD_TESTING:
-		return "testing";
 	case BOARD_PASSED:
 		return "passed";
 	case BOARD_FAILED:
@@ -331,22 +309,10 @@ static void init_game(struct game *game)
 	game->player.y = 370.0f;
 	game->player.held = item_none();
 
-	add_station(game, "bin_resistor", ST_MATERIAL_BIN, 92, 160, 92, 62, COMP_RESISTOR);
-	add_station(game, "bin_capacitor", ST_MATERIAL_BIN, 92, 246, 92, 62, COMP_CAPACITOR);
-	add_station(game, "bin_inductor", ST_MATERIAL_BIN, 92, 332, 92, 62, COMP_INDUCTOR);
-	add_station(game, "trash", ST_TRASH, 92, 542, 112, 68, COMP_RESISTOR);
-	add_station(game, "intake", ST_INTAKE, 1058, 542, 112, 68, COMP_RESISTOR);
-	add_station(game, "shipping", ST_SHIPPING, 1092, 286, 92, 84, COMP_RESISTOR);
-	add_station(game, "welder_1", ST_WELDER, 304, 542, 132, 68, COMP_RESISTOR);
-	add_station(game, "welder_2", ST_WELDER, 474, 542, 132, 68, COMP_RESISTOR);
-	add_station(game, "welder_3", ST_WELDER, 574, 118, 132, 68, COMP_RESISTOR);
-	add_station(game, "verifier_1", ST_VERIFIER, 786, 118, 136, 68, COMP_RESISTOR);
-	add_station(game, "verifier_2", ST_VERIFIER, 954, 118, 136, 68, COMP_RESISTOR);
-	add_station(game, "table_1", ST_TABLE, 230, 118, 100, 60, COMP_RESISTOR);
-	add_station(game, "table_2", ST_TABLE, 354, 118, 100, 60, COMP_RESISTOR);
-	add_station(game, "table_3", ST_TABLE, 646, 542, 100, 68, COMP_RESISTOR);
-	add_station(game, "table_4", ST_TABLE, 776, 542, 100, 68, COMP_RESISTOR);
-	add_station(game, "table_5", ST_TABLE, 906, 542, 100, 68, COMP_RESISTOR);
+#define OVERBUG_ADD_FACILITY(id, type, x, y, w, h, component) \
+	add_station(game, id, type, x, y, w, h, component);
+	OB_FACILITY_LAYOUT(OVERBUG_ADD_FACILITY)
+#undef OVERBUG_ADD_FACILITY
 
 	srand(7);
 	for (i = 0; i < ORDER_COUNT; ++i)
@@ -411,12 +377,15 @@ static bool board_can_enter_welder(enum board_state state)
 	return state == BOARD_RAW || state == BOARD_SOLDERING || state == BOARD_READY_TO_TEST;
 }
 
+static int find_matching_order(const struct game *game, const struct board *board);
+
 static bool drop_to_welder(struct station *station, struct item *item)
 {
 	if (item->kind == ITEM_BOARD) {
 		if (item_is_empty(&station->board_item) && board_can_enter_welder(item->board.state)) {
 			item->board.state = BOARD_SOLDERING;
 			station->board_item = *item;
+			station->progress = 0.0f;
 			return true;
 		}
 		return false;
@@ -424,21 +393,31 @@ static bool drop_to_welder(struct station *station, struct item *item)
 	if (item->kind == ITEM_MATERIAL) {
 		if (item_is_board(&station->board_item) && item_is_empty(&station->pending_material)) {
 			station->pending_material = *item;
+			station->progress = 0.0f;
 			return true;
 		}
 	}
 	return false;
 }
 
-static bool drop_to_verifier(struct station *station, struct item *item)
+static bool drop_to_verifier(struct game *game, struct station *station, struct item *item)
 {
+	int order_index;
+
 	if (item->kind != ITEM_BOARD || !item_is_empty(&station->item))
 		return false;
 	if (!board_can_enter_welder(item->board.state))
 		return false;
-	item->board.state = BOARD_TESTING;
 	station->item = *item;
 	station->progress = 0.0f;
+	order_index = find_matching_order(game, &station->item.board);
+	if (order_index >= 0) {
+		station->item.board.state = BOARD_PASSED;
+		station->item.board.locked_order_id = game->orders[order_index].id;
+		game->orders[order_index].locked_board_id = station->item.board.id;
+	} else {
+		station->item.board.state = BOARD_FAILED;
+	}
 	return true;
 }
 
@@ -490,7 +469,7 @@ static bool drop_to_station(struct game *game, struct station *station, struct i
 	case ST_WELDER:
 		return drop_to_welder(station, item);
 	case ST_VERIFIER:
-		return drop_to_verifier(station, item);
+		return drop_to_verifier(game, station, item);
 	case ST_SHIPPING:
 		return ship_item(game, item);
 	case ST_TRASH:
@@ -543,8 +522,8 @@ static void move_player(struct game *game, float dt)
 
 	player->x += dx * PLAYER_SPEED * dt;
 	player->y += dy * PLAYER_SPEED * dt;
-	player->x = clampf(player->x, MAP_X + PLAYER_RADIUS, MAP_X + MAP_W - PLAYER_RADIUS);
-	player->y = clampf(player->y, MAP_Y + PLAYER_RADIUS, MAP_Y + MAP_H - PLAYER_RADIUS);
+	player->x = clampf(player->x, OB_MAP_X + PLAYER_RADIUS, OB_MAP_X + OB_MAP_W - PLAYER_RADIUS);
+	player->y = clampf(player->y, OB_MAP_Y + PLAYER_RADIUS, OB_MAP_Y + OB_MAP_H - PLAYER_RADIUS);
 
 	if (player_hits_station(player, game)) {
 		player->x = old_x;
@@ -552,7 +531,7 @@ static void move_player(struct game *game, float dt)
 	}
 }
 
-static int find_matching_order(struct game *game, const struct board *board)
+static int find_matching_order(const struct game *game, const struct board *board)
 {
 	int i;
 
@@ -567,53 +546,22 @@ static int find_matching_order(struct game *game, const struct board *board)
 	return -1;
 }
 
-static bool player_can_solder_station(const struct game *game, const struct station *station)
+static bool solder_nearest_welder(struct game *game, struct player *player)
 {
-	const struct player *player = &game->player;
+	struct station *station = nearest_station(game, player);
+	enum component component;
 
-	return (player->input_mask & OB_BTN_SOLDER) &&
-	       distance_to_rect(player->x, player->y, station) < INTERACT_DISTANCE;
-}
+	if (station == NULL || station->type != ST_WELDER ||
+	    !item_is_board(&station->board_item) ||
+	    station->pending_material.kind != ITEM_MATERIAL)
+		return false;
 
-static void advance_stations(struct game *game, float dt)
-{
-	int i;
-
-	for (i = 0; i < game->station_count; ++i) {
-		struct station *station = &game->stations[i];
-
-		if (station->type == ST_WELDER &&
-		    item_is_board(&station->board_item) &&
-		    station->pending_material.kind == ITEM_MATERIAL) {
-			if (player_can_solder_station(game, station)) {
-				station->progress += dt;
-				if (station->progress >= SOLDER_SECONDS) {
-					enum component c = station->pending_material.component;
-
-					station->board_item.board.counts[c] += 1;
-					station->board_item.board.state = BOARD_READY_TO_TEST;
-					clear_item(&station->pending_material);
-					station->progress = 0.0f;
-				}
-			}
-		} else if (station->type == ST_VERIFIER &&
-			   item_is_board(&station->item) &&
-			   station->item.board.state == BOARD_TESTING) {
-			station->progress += dt;
-			if (station->progress >= INSPECTION_SECONDS) {
-				int order_index = find_matching_order(game, &station->item.board);
-
-				if (order_index >= 0) {
-					station->item.board.state = BOARD_PASSED;
-					station->item.board.locked_order_id = game->orders[order_index].id;
-					game->orders[order_index].locked_board_id = station->item.board.id;
-				} else {
-					station->item.board.state = BOARD_FAILED;
-				}
-				station->progress = 0.0f;
-			}
-		}
-	}
+	component = station->pending_material.component;
+	station->board_item.board.counts[component] += 1;
+	station->board_item.board.state = BOARD_READY_TO_TEST;
+	clear_item(&station->pending_material);
+	station->progress = 0.0f;
+	return true;
 }
 
 static void update_game(struct game *game, float dt)
@@ -621,16 +569,8 @@ static void update_game(struct game *game, float dt)
 	struct player *player = &game->player;
 	bool action_now;
 	bool action_before;
-
-	if (game->game_over)
-		return;
-
-	game->remaining_seconds -= dt;
-	if (game->remaining_seconds <= 0.0f) {
-		game->remaining_seconds = 0.0f;
-		game->game_over = true;
-		return;
-	}
+	bool solder_now;
+	bool solder_before;
 
 	move_player(game, dt);
 
@@ -639,7 +579,11 @@ static void update_game(struct game *game, float dt)
 	if (action_now && !action_before)
 		interact(game, player);
 
-	advance_stations(game, dt);
+	solder_now = (player->input_mask & OB_BTN_SOLDER) != 0;
+	solder_before = (player->prev_input_mask & OB_BTN_SOLDER) != 0;
+	if (solder_now && !solder_before)
+		solder_nearest_welder(game, player);
+
 	player->prev_input_mask = player->input_mask;
 }
 

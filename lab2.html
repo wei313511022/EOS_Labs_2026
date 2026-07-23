@@ -36,8 +36,17 @@
       <h2>Before you begin</h2>
       <div class="callout warning">
         <strong>Kernel warning</strong>
-        Before starting Lab 2, switch back to the original rpi-6.12 kernel. A
-        Lab 1 kernel may cause module-build errors.
+        Before starting Lab 2, boot the clean <code>rpi-6.1.y</code> GPIO-lab
+        kernel built in Lab 1's appendix and build against its matching source
+        tree. Verify that <code>uname -r</code> exactly matches the
+        <code>$KREL</code> printed during that build. A Lab 1 kernel or a
+        mismatched build tree may cause module-build or module-load errors.
+      </div>
+      <div class="callout info">
+        <strong>Teaching API</strong>
+        This course intentionally pins Linux 6.1 to demonstrate the deprecated
+        integer-based GPIO API. New production drivers should use the
+        descriptor-based <code>gpiod_*</code> API instead.
       </div>
       <p>This lab assumes you understand:</p>
       <ul>
@@ -219,6 +228,7 @@
         <li>Choose six pins labelled <code>GPIO</code>; do not use a 3.3 V, 5 V, or GND pin as a GPIO input.</li>
         <li>Record each physical header position and its BCM GPIO number before wiring your controls.</li>
         <li>Configure the same six BCM GPIO numbers in your <code>driver.c</code> module parameters.</li>
+        <li>Connect each input through a physical pull-up resistor; the legacy API used in this lab does not configure the internal bias.</li>
       </ul>
 
       <div class="callout warning">
@@ -344,9 +354,10 @@
 
       <h3>Driver checklist</h3>
       <ul>
-        <li>Follow the Section 3 API flow: define the six masks, request the configured GPIO lines, and clean them up safely.</li>
+        <li>For every configured BCM number, call <code>gpio_request()</code>, then <code>gpio_direction_input()</code>.</li>
+        <li>Read each input with <code>gpio_get_value()</code> and combine the six values into the device-state mask.</li>
         <li>Create the <code>overbug_buttons</code> misc device.</li>
-        <li>Release GPIO descriptors and unregister the device when the module unloads.</li>
+        <li>Release every requested line with <code>gpio_free()</code> and unregister the device when the module unloads.</li>
       </ul>
 
       <h3>Reader checklist</h3>
@@ -361,18 +372,29 @@
         make the kernel module and user-space reader easy to build and clean.
       </p>
       <ul>
-        <li><code>make module</code> builds <code>overbug_buttons.ko</code> through the running kernel's build tree.</li>
+        <li><code>make module</code> builds <code>overbug_buttons.ko</code> through the matching clean 6.1 kernel source tree on the Ubuntu VM.</li>
         <li><code>make reader</code> compiles <code>reader.c</code> into the <code>reader</code> program.</li>
-        <li><code>make clean</code> removes the module build output and the <code>reader</code> executable.</li>
+        <li>Run <code>make clean</code> with the same VM kernel-tree arguments to remove module build output; it also removes the <code>reader</code> executable.</li>
       </ul>
     </section>
 
     <section class="panel">
       <h2>4. Build and run</h2>
-      <h3>On the Raspberry Pi</h3>
-      <p>Build the module, verify one device-state line, then start the reader:</p>
+      <h3>Cross-compile the kernel module on the Ubuntu VM</h3>
+      <p>
+        The custom kernel installation provides modules but not a
+        <code>/lib/modules/$(uname -r)/build</code> tree on the Pi. Build the
+        module against the same clean 6.1 source directory used to produce the
+        running kernel, then copy the resulting <code>.ko</code> file to the Pi.
+      </p>
       <pre><code>cd Lab2
-make module
+make KDIR=/path/to/linux-rpi-6.1-gpio \
+    ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- module
+scp overbug_buttons.ko &lt;pi-user&gt;@&lt;pi-address&gt;:~/Lab2/</code></pre>
+
+      <h3>On the Raspberry Pi</h3>
+      <p>Load the cross-compiled module, verify one device-state line, then build and start the reader:</p>
+      <pre><code>cd ~/Lab2
 sudo insmod overbug_buttons.ko
 
 make reader
@@ -398,9 +420,11 @@ python3 display.py --host 0.0.0.0 --port 17667</code></pre>
 
       <h3>Your Makefile targets</h3>
       <p>Before running these commands, create your own <code>Makefile</code> with the required targets:</p>
-      <pre><code>make module
+      <pre><code>make KDIR=/path/to/linux-rpi-6.1-gpio \
+    ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- module
 make reader
-make clean</code></pre>
+make KDIR=/path/to/linux-rpi-6.1-gpio \
+    ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- clean</code></pre>
     </section>
 
     <section class="panel">
@@ -410,7 +434,6 @@ make clean</code></pre>
       <ol>
         <li>What is a driver? Explain the relationship between GPIO, driver, driver table, device, and device table.</li>
         <li>Simply introduce the 40 pins on the RPi. Which pins do you use in this lab?</li>
-        <li>Which GPIO APIs request, read, and release your GPIO pins?</li>
         <li>What do <code>copy_to_user()</code> and <code>copy_from_user()</code> do, and why must a driver use them instead of directly dereferencing a user-space pointer?</li>
         <li>What is switch bounce, and how can a polling driver reduce it?</li>
         <li>What are the major and minor numbers of /dev/overbug_buttons, and how are they assigned?</li>
