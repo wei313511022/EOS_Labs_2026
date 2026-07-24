@@ -588,7 +588,7 @@ pre code {
 
 .lab-flow {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 14px;
   margin-top: 20px;
 }
@@ -1154,6 +1154,11 @@ pre code {
 .lab-card:nth-child(4) .lab-tag {
   color: #70418f;
   background: #f2e9fb;
+}
+
+.lab-card:nth-child(6) .lab-tag {
+  color: #8a4e12;
+  background: #fff0d8;
 }
 
 .lab-card h3 {

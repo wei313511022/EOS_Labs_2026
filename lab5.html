@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Lab 5 for RTES913: EOS — safely configure, build, benchmark, and restore a Raspberry Pi kernel.">
+  <title>Lab 5 - Kernel Configuration and Performance Tuning</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <nav class="top-nav" aria-label="Main navigation">
+      <a class="brand" href="index.html">Overbug</a>
+      <div class="nav-links">
+        <a href="index.html">Home</a>
+        <a href="lab0.html">Lab 0</a>
+        <a href="lab1.html">Lab 1</a>
+        <a href="lab2.html">Lab 2</a>
+        <a href="lab3.html">Lab 3</a>
+        <a href="lab4.html">Lab 4</a>
+        <a aria-current="page" href="lab5.html">Lab 5</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="page">
+    <section class="hero lab-hero">
+      <p class="eyebrow">RTES913 - EOS - Raspberry Pi 4</p>
+      <h1>Lab 5: Kernel Configuration and Performance Tuning</h1>
+      <p class="subtitle">Make one safe, explainable kernel configuration change, then justify and use a public Raspberry Pi benchmark to measure its effect.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Before you begin</h2>
+      <div class="callout warning">
+        <strong>Keep a working boot path.</strong> This lab builds a new kernel image, not a replacement for the Raspberry Pi OS image. Back up the boot configuration before selecting your Lab 5 image.
+      </div>
+      <p>Before starting, make sure you have:</p>
+      <ul>
+        <li>completed Labs 1 through 4, including a working Lab 4 server that can run on the Raspberry Pi;</li>
+        <li>a dedicated clean <code>rpi-6.1.y</code> Raspberry Pi 4 / 64-bit kernel tree and the arm64 cross-compilation toolchain;</li>
+        <li>a known-good Raspberry Pi OS boot image, SSH access, and an SD-card recovery path; and</li>
+      </ul>
+      <p>By the end of this lab, you will be able to trace a kernel configuration from a default configuration to a booted image, compare two controlled benchmark runs, and explain both the benefit and the cost of your change.</p>
+    </section>
+
+    <section class="panel">
+      <h2>QA</h2>
+      <p>Answer all four questions in your submission. These are open questions; support each answer with the relevant implementation, configuration, benchmark, or demonstration evidence.</p>
+      <ol>
+        <li>Based on Labs 1 to 4, how would you modify <code>.config</code> and make the game performance better? Research and install a public benchmark on your Raspberry Pi. You must decide which benchmark is appropriate, explain why its metrics evaluate your proposed change, and use repeatable baseline and modified-kernel results to prove your modification.</li>
+        <li>Based on Lab 1 to Lab 4, which part of the project design is weak? Help us to fix it.</li>
+        <li>Use your creativity to extend a new mechanism or function in this game. The extension must be related to what you learned from the courses.</li>
+        <li>Do you have any advice to help us make the labs better?</li>
+      </ol>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <a href="lab4.html">Previous: Lab 4</a> &middot; <a href="index.html">Home</a>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
