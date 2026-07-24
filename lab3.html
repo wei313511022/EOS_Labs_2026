@@ -323,9 +323,10 @@
       <h2>6. Build and run</h2>
       <p>After you implement the refactor, use the PC terminals required by your chosen design.</p>
       <h3>Build the Lab 3 server</h3>
+      <p>Write your own <code>Makefile</code> for the Lab 3 server; one is not provided. It should compile <code>server.c</code> into a <code>server</code> program (for example, through a default <code>make</code> target) and offer a <code>make clean</code> target.</p>
       <pre><code>cd Lab3
 make</code></pre>
-      <p>The starter Makefile builds the single-player baseline. Add architecture-specific link options only when your implementation needs them; for example, add <code>-pthread</code> for POSIX threads, mutexes, or spinlocks. POSIX message queues may also require <code>-lrt</code> on some Linux systems.</p>
+      <p>Add architecture-specific link options as your implementation needs them; for example, add <code>-pthread</code> for POSIX threads, mutexes, or spinlocks. POSIX message queues may also require <code>-lrt</code> on some Linux systems.</p>
       <h3>Start the provided display</h3>
       <pre><code>python3 ../Lab2/display.py --host 0.0.0.0 --port 17667</code></pre>
       <h3>Start your multiplayer server</h3>

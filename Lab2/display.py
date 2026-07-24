@@ -88,7 +88,7 @@ class Renderer:
         self.solder_icon = self._load_solder_icon()
 
     def _load_solder_icon(self) -> Any | None:
-        path = Path(__file__).resolve().parents[1] / "game" / "assets" / "soldering_iron_reference.png"
+        path = Path(__file__).resolve().parents[1] / "assets" / "soldering_iron_reference.png"
         if not path.exists():
             return None
         try:

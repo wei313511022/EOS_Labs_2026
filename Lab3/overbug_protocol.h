@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-struct ob_input_packet {
+struct __attribute__((packed)) ob_input_packet {
 	char magic[4];       /* "OBIN" */
 	uint8_t player_id;   /* 1 for Lab 2; 1-4 for Lab 3 */
 	uint8_t button_mask; /* 6-bit device state */

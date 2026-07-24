@@ -165,6 +165,13 @@ for (;;) {
 
       <h3>Build and exercise Mission 1</h3>
       <p>
+        Write your own <code>Makefile</code> for Lab 4; one is not provided. It should offer a
+        <code>module</code> target that cross-compiles <code>overbug_buttons.ko</code>, a
+        <code>reader</code> target that builds <code>reader</code>, a <code>server</code> target that
+        builds <code>server</code>, and a matching <code>clean</code> target. The commands below assume
+        those targets exist.
+      </p>
+      <p>
         Cross-compile the kernel module in the Ubuntu VM against the clean 6.1
         source tree. The Pi installation does not include a
         <code>/lib/modules/$(uname -r)/build</code> tree.
