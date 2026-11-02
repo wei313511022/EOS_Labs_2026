@@ -11,7 +11,7 @@ WIDTH = 1280
 HEIGHT = 720
 MAP_RECT = (70, 96, 1140, 540)
 
-# Fixed facility geometry. UDP snapshots carry only changing station state.
+# Fixed facility geometry. UDP OBST packets carry only changing station state.
 FACILITIES: tuple[dict[str, Any], ...] = (
     {"id": "bin_resistor", "type": "material_bin", "x": 92, "y": 160, "w": 92, "h": 62, "component": "resistor"},
     {"id": "bin_capacitor", "type": "material_bin", "x": 92, "y": 246, "w": 92, "h": 62, "component": "capacitor"},
@@ -70,11 +70,11 @@ def receive_latest(sock: socket.socket, current: dict[str, Any] | None) -> dict[
         except BlockingIOError:
             return latest
         try:
-            snapshot = json.loads(data.decode("utf-8"))
+            packet = json.loads(data.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             continue
-        if snapshot.get("packet_id") == "OBST":
-            latest = snapshot
+        if packet.get("packet_id") == "OBST":
+            latest = packet
 
 
 class Renderer:
@@ -97,25 +97,25 @@ class Renderer:
             return None
         return self.pygame.transform.smoothscale(image, (46, 46))
 
-    def draw(self, snapshot: dict[str, Any] | None) -> None:
+    def draw(self, packet: dict[str, Any] | None) -> None:
         self.screen.fill(COLORS["bg"])
         self._draw_map()
-        if snapshot is None:
+        if packet is None:
             self._draw_waiting()
             return
         station_states = {
             station["id"]: station
-            for station in snapshot.get("stations", [])
+            for station in packet.get("stations", [])
             if isinstance(station, dict) and isinstance(station.get("id"), str)
         }
         for facility in FACILITIES:
             self._draw_station({**station_states.get(facility["id"], {}), **facility})
-        for player in snapshot.get("players", []):
+        for player in packet.get("players", []):
             self._draw_player(player)
-        self._draw_orders(snapshot)
-        self._draw_hud(snapshot)
-        if snapshot.get("game_over"):
-            self._draw_game_over(snapshot)
+        self._draw_orders(packet)
+        self._draw_hud(packet)
+        if packet.get("game_over"):
+            self._draw_game_over(packet)
 
     def _draw_map(self) -> None:
         pygame = self.pygame
@@ -174,11 +174,11 @@ class Renderer:
         elif station_type == "table":
             self._draw_item(station.get("item"), rect.centerx - 18, rect.centery - 18, 0.75)
 
-    def _draw_orders(self, snapshot: dict[str, Any]) -> None:
+    def _draw_orders(self, packet: dict[str, Any]) -> None:
         pygame = self.pygame
         title = self.big.render("OVERBUG", True, COLORS["ink"])
         self.screen.blit(title, (28, 22))
-        for index, order in enumerate(snapshot.get("orders", [])):
+        for index, order in enumerate(packet.get("orders", [])):
             x = 292 + index * 206
             rect = pygame.Rect(x, 18, 184, 64)
             fill = (255, 255, 255) if not order.get("locked_board_id") else (232, 248, 234)
@@ -193,16 +193,16 @@ class Renderer:
                 self.screen.blit(text, (cx + 16, 48))
                 cx += 52
 
-    def _draw_hud(self, snapshot: dict[str, Any]) -> None:
+    def _draw_hud(self, packet: dict[str, Any]) -> None:
         pygame = self.pygame
         score_rect = pygame.Rect(24, 660, 250, 46)
         timer_rect = pygame.Rect(1060, 660, 190, 46)
         for rect in (score_rect, timer_rect):
             pygame.draw.rect(self.screen, (255, 255, 255), rect, border_radius=12)
             pygame.draw.rect(self.screen, COLORS["line"], rect, 2, border_radius=12)
-        score = self.mid.render(f"Score {snapshot.get('score', 0)}", True, COLORS["ink"])
+        score = self.mid.render(f"Score {packet.get('score', 0)}", True, COLORS["ink"])
         self.screen.blit(score, (score_rect.x + 18, score_rect.y + 8))
-        remaining = int(snapshot.get("remaining_ms", 0)) // 1000
+        remaining = int(packet.get("remaining_ms", 0)) // 1000
         timer = self.mid.render(f"{remaining // 60:02d}:{remaining % 60:02d}", True, COLORS["ink"])
         self.screen.blit(timer, (timer_rect.x + 45, timer_rect.y + 8))
 
@@ -324,10 +324,10 @@ class Renderer:
         self.screen.blit(rendered, rendered.get_rect(center=rect.center))
 
     def _draw_waiting(self) -> None:
-        text = self.mid.render("Waiting for server.c snapshots on UDP...", True, COLORS["ink"])
+        text = self.mid.render("Waiting for OBST packets on UDP...", True, COLORS["ink"])
         self.screen.blit(text, text.get_rect(center=(WIDTH // 2, HEIGHT // 2)))
 
-    def _draw_game_over(self, snapshot: dict[str, Any]) -> None:
+    def _draw_game_over(self, packet: dict[str, Any]) -> None:
         pygame = self.pygame
         overlay = pygame.Surface(self.screen.get_size(), pygame.SRCALPHA)
         overlay.fill((24, 34, 44, 150))
@@ -338,9 +338,9 @@ class Renderer:
         title = self.big.render("Time!", True, COLORS["ink"])
         self.screen.blit(title, title.get_rect(center=(panel.centerx, panel.y + 58)))
         lines = [
-            f"Final score: {snapshot.get('score', 0)}",
-            f"Boards shipped: {snapshot.get('completed', 0)}",
-            f"Recycled items: {snapshot.get('recycled', 0)}",
+            f"Final score: {packet.get('score', 0)}",
+            f"Boards shipped: {packet.get('completed', 0)}",
+            f"Recycled items: {packet.get('recycled', 0)}",
             "Press Esc to quit",
         ]
         for index, line in enumerate(lines):
@@ -360,7 +360,7 @@ def main() -> int:
     pygame.display.set_caption("Overbug Lab 2 Display")
     clock = pygame.time.Clock()
     renderer = Renderer(pygame, screen)
-    snapshot: dict[str, Any] | None = None
+    packet: dict[str, Any] | None = None
     running = True
 
     while running:
@@ -370,8 +370,8 @@ def main() -> int:
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 running = False
 
-        snapshot = receive_latest(sock, snapshot)
-        renderer.draw(snapshot)
+        packet = receive_latest(sock, packet)
+        renderer.draw(packet)
         pygame.display.flip()
         clock.tick(60)
 

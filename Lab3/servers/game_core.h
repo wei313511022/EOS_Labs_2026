@@ -1,15 +1,9 @@
-#define _POSIX_C_SOURCE 200809L
+#ifndef OVERBUG_GAME_CORE_H
+#define OVERBUG_GAME_CORE_H
 
-/*
- * Overbug Lab 3 starter server.
- *
- * This is the Lab 2 single-player baseline. Refactor it into a Linux/POSIX
- * server for two to four concurrent players. Choose and justify an
- * architecture that safely coordinates input, game updates, and display
- * output. Keep the OBIN input-packet contract unchanged.
- */
-
-#include <errno.h>
+/* Four-player Overbug rules shared by both servers.
+ * No networking or synchronization here: only the thread that owns a
+ * struct game may call these functions on it. */
 #include <math.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -17,44 +11,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
-#include <time.h>
-
-#include "overbug_protocol.h"
-#include "overbug_world.h"
-
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-typedef SOCKET ob_socket_t;
-#define CLOSE_SOCKET closesocket
-#else
-#include <arpa/inet.h>
-#include <fcntl.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-typedef int ob_socket_t;
-#define INVALID_SOCKET (-1)
-#define SOCKET_ERROR (-1)
-#define CLOSE_SOCKET close
-#endif
-
-#define INPUT_PORT_DEFAULT 17666
-#define DISPLAY_PORT_DEFAULT 17667
-#define DISPLAY_HOST_DEFAULT "127.0.0.1"
+#include "../overbug_world.h"
 
 #define PLAYER_RADIUS 18.0f
 #define PLAYER_SPEED 185.0f
+/* Movement is integrated in steps of at most 1/60 s (3 px), so a slow server
+ * moves as far as a 60 Hz one and still cannot skip past a station. */
+#define MOVE_STEP_SECONDS (1.0f / 60.0f)
+/* Only guards against long stalls (debugger, SIGSTOP), not normal slow ticks. */
+#define MAX_UPDATE_SECONDS 0.5f
 #define INTERACT_DISTANCE 54.0f
 #define ROUND_SECONDS 180.0f
 #define SOLDER_SECONDS 2.0f
 #define INSPECTION_SECONDS 4.0f
 #define ORDER_COUNT 3
 #define MAX_STATIONS OB_FACILITY_COUNT
-#define SNAPSHOT_BYTES 32768
+#define OBST_BYTES 32768
 
 #define OB_BTN_UP      0x01
 #define OB_BTN_DOWN    0x02
@@ -114,17 +86,13 @@ struct player {
 	int id;
 	float x;
 	float y;
-	uint8_t input_mask;
-	uint8_t prev_input_mask;
+	uint8_t input_mask;	/* buttons held now; only the direction bits are used here */
 	struct item held;
 };
 
 struct game {
-	/*
-	 * Lab 3 starting point: replace this field with storage for two to four
-	 * active players, coordinated by the design you choose.
-	 */
-	struct player player;
+	struct player players[4];
+	int players_count;
 	struct station stations[MAX_STATIONS];
 	int station_count;
 	struct order orders[ORDER_COUNT];
@@ -136,14 +104,6 @@ struct game {
 	float remaining_seconds;
 	bool game_over;
 };
-
-static volatile sig_atomic_t running = 1;
-
-static void handle_signal(int signum)
-{
-	(void)signum;
-	running = 0;
-}
 
 static const char *component_name(enum component component)
 {
@@ -304,10 +264,14 @@ static void init_game(struct game *game)
 	game->next_board_id = 1;
 	game->remaining_seconds = ROUND_SECONDS;
 
-	game->player.id = 1;
-	game->player.x = 560.0f;
-	game->player.y = 370.0f;
-	game->player.held = item_none();
+	const float spawn_x[4] = {560.0f, 620.0f, 500.0f, 680.0f};
+	game->players_count = 4;
+	for (i = 0; i < 4; ++i) {
+		game->players[i].id = i + 1;
+		game->players[i].x = spawn_x[i];
+		game->players[i].y = 370.0f;
+		game->players[i].held = item_none();
+	}
 
 #define OVERBUG_ADD_FACILITY(id, type, x, y, w, h, component) \
 	add_station(game, id, type, x, y, w, h, component);
@@ -496,9 +460,8 @@ static void interact(struct game *game, struct player *player)
 	}
 }
 
-static void move_player(struct game *game, float dt)
+static void move_player(struct game *game, struct player *player, float dt)
 {
-	struct player *player = &game->player;
 	float old_x = player->x;
 	float old_y = player->y;
 	float dx = 0.0f;
@@ -564,27 +527,37 @@ static bool solder_nearest_welder(struct game *game, struct player *player)
 	return true;
 }
 
+/* Moves one player by dt along the held direction buttons. */
+static void update_player(struct game *game, struct player *player, float dt)
+{
+	float step;
+
+	while (dt > 0.0f) {
+		step = dt < MOVE_STEP_SECONDS ? dt : MOVE_STEP_SECONDS;
+		move_player(game, player, step);
+		dt -= step;
+	}
+}
+
+/* Carries out one button press: ACTION picks up or puts down at the nearest
+ * station, SOLDER solders at the nearest welder. buttons holds the buttons
+ * that were just pressed, not the ones still held. */
+static void press_buttons(struct game *game, struct player *player, uint8_t buttons)
+{
+	if (buttons & OB_BTN_ACTION)
+		interact(game, player);
+	if (buttons & OB_BTN_SOLDER)
+		solder_nearest_welder(game, player);
+}
+
+/* Moves every player by dt. Button presses are not handled here: the server
+ * calls press_buttons for them in the order their packets arrived. */
 static void update_game(struct game *game, float dt)
 {
-	struct player *player = &game->player;
-	bool action_now;
-	bool action_before;
-	bool solder_now;
-	bool solder_before;
-
-	move_player(game, dt);
-
-	action_now = (player->input_mask & OB_BTN_ACTION) != 0;
-	action_before = (player->prev_input_mask & OB_BTN_ACTION) != 0;
-	if (action_now && !action_before)
-		interact(game, player);
-
-	solder_now = (player->input_mask & OB_BTN_SOLDER) != 0;
-	solder_before = (player->prev_input_mask & OB_BTN_SOLDER) != 0;
-	if (solder_now && !solder_before)
-		solder_nearest_welder(game, player);
-
-	player->prev_input_mask = player->input_mask;
+	if (dt > MAX_UPDATE_SECONDS)
+		dt = MAX_UPDATE_SECONDS;
+	for (int i = 0; i < game->players_count; ++i)
+		update_player(game, &game->players[i], dt);
 }
 
 static void json_append(char *buf, size_t cap, size_t *len, const char *fmt, ...)
@@ -628,7 +601,7 @@ static void json_item(char *buf, size_t cap, size_t *len, const struct item *ite
 	}
 }
 
-static size_t build_snapshot_json(const struct game *game, char *buf, size_t cap)
+static size_t build_obst_json(const struct game *game, char *buf, size_t cap)
 {
 	size_t len = 0;
 	bool first_station = true;
@@ -636,8 +609,9 @@ static size_t build_snapshot_json(const struct game *game, char *buf, size_t cap
 
 	json_append(buf, cap, &len,
 		    "{\"packet_id\":\"OBST\","
-		    "\"players_count\":1,\"remaining_ms\":%d,\"score\":%d,"
+		    "\"players_count\":%d,\"remaining_ms\":%d,\"score\":%d,"
 		    "\"completed\":%d,\"recycled\":%d,\"game_over\":%s,",
+		    game->players_count,
 		    (int)(game->remaining_seconds * 1000.0f),
 		    game->score,
 		    game->completed,
@@ -645,13 +619,16 @@ static size_t build_snapshot_json(const struct game *game, char *buf, size_t cap
 		    game->game_over ? "true" : "false");
 
 	json_append(buf, cap, &len, "\"players\":[");
-	json_append(buf, cap, &len,
-		    "{\"id\":%d,\"x\":%.1f,\"y\":%.1f,\"held\":",
-		    game->player.id,
-		    game->player.x,
-		    game->player.y);
-	json_item(buf, cap, &len, &game->player.held);
-	json_append(buf, cap, &len, "}");
+	for (i = 0; i < game->players_count; ++i) {
+		const struct player *player = &game->players[i];
+		if (i > 0)
+			json_append(buf, cap, &len, ",");
+		json_append(buf, cap, &len,
+			    "{\"id\":%d,\"x\":%.1f,\"y\":%.1f,\"held\":",
+			    player->id, player->x, player->y);
+		json_item(buf, cap, &len, &player->held);
+		json_append(buf, cap, &len, "}");
+	}
 	json_append(buf, cap, &len, "],");
 
 	json_append(buf, cap, &len, "\"orders\":[");
@@ -706,219 +683,4 @@ static size_t build_snapshot_json(const struct game *game, char *buf, size_t cap
 	return len;
 }
 
-#ifdef _WIN32
-static void socket_startup(void)
-{
-	WSADATA data;
-
-	WSAStartup(MAKEWORD(2, 2), &data);
-}
-
-static void socket_cleanup(void)
-{
-	WSACleanup();
-}
-
-static int set_nonblocking(ob_socket_t sock)
-{
-	u_long mode = 1;
-	return ioctlsocket(sock, FIONBIO, &mode);
-}
-
-static double now_ms(void)
-{
-	static LARGE_INTEGER freq;
-	LARGE_INTEGER counter;
-
-	if (freq.QuadPart == 0)
-		QueryPerformanceFrequency(&freq);
-	QueryPerformanceCounter(&counter);
-	return (double)counter.QuadPart * 1000.0 / (double)freq.QuadPart;
-}
-
-static void sleep_ms(int ms)
-{
-	Sleep((DWORD)ms);
-}
-#else
-static void socket_startup(void)
-{
-}
-
-static void socket_cleanup(void)
-{
-}
-
-static int set_nonblocking(ob_socket_t sock)
-{
-	int flags = fcntl(sock, F_GETFL, 0);
-
-	if (flags < 0)
-		return -1;
-	return fcntl(sock, F_SETFL, flags | O_NONBLOCK);
-}
-
-static double now_ms(void)
-{
-	struct timespec ts;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1000000.0;
-}
-
-static void sleep_ms(int ms)
-{
-	struct timespec ts;
-
-	ts.tv_sec = ms / 1000;
-	ts.tv_nsec = (long)(ms % 1000) * 1000000L;
-	nanosleep(&ts, NULL);
-}
 #endif
-
-static void usage(const char *argv0)
-{
-	fprintf(stderr,
-		"Usage: %s [options]\n"
-		"\n"
-		"Options:\n"
-		"  This Lab 2 server supports player 1 only.\n"
-		"  --input-port PORT      default: 17666\n"
-		"  --display-host IP      default: 127.0.0.1\n"
-		"  --display-port PORT    default: 17667\n",
-		argv0);
-}
-
-static void receive_inputs(ob_socket_t sock, struct game *game)
-{
-	for (;;) {
-		struct ob_input_packet packet;
-		struct sockaddr_in from;
-#ifdef _WIN32
-		int from_len = sizeof(from);
-		int n = recvfrom(sock, (char *)&packet, sizeof(packet), 0,
-				 (struct sockaddr *)&from, &from_len);
-#else
-		socklen_t from_len = sizeof(from);
-		ssize_t n = recvfrom(sock, &packet, sizeof(packet), 0,
-				     (struct sockaddr *)&from, &from_len);
-#endif
-		(void)from;
-		(void)from_len;
-
-		if (n < 0) {
-#ifdef _WIN32
-			int err = WSAGetLastError();
-			if (err == WSAEWOULDBLOCK)
-				return;
-#else
-			if (errno == EAGAIN || errno == EWOULDBLOCK)
-				return;
-#endif
-			return;
-		}
-		if ((size_t)n != sizeof(packet))
-			continue;
-		if (memcmp(packet.magic, "OBIN", 4) != 0)
-			continue;
-		if (packet.player_id != 1)
-			continue;
-
-		game->player.input_mask = packet.button_mask & 0x3f;
-	}
-}
-
-int main(int argc, char **argv)
-{
-	int input_port = INPUT_PORT_DEFAULT;
-	int display_port = DISPLAY_PORT_DEFAULT;
-	const char *display_host = DISPLAY_HOST_DEFAULT;
-	ob_socket_t input_sock;
-	ob_socket_t display_sock;
-	struct sockaddr_in input_addr;
-	struct sockaddr_in display_addr;
-	struct game game;
-	double last_ms;
-	double next_snapshot_ms;
-	int i;
-
-	for (i = 1; i < argc; ++i) {
-		if (strcmp(argv[i], "--input-port") == 0 && i + 1 < argc) {
-			input_port = atoi(argv[++i]);
-		} else if (strcmp(argv[i], "--display-host") == 0 && i + 1 < argc) {
-			display_host = argv[++i];
-		} else if (strcmp(argv[i], "--display-port") == 0 && i + 1 < argc) {
-			display_port = atoi(argv[++i]);
-		} else {
-			usage(argv[0]);
-			return 2;
-		}
-	}
-
-	signal(SIGINT, handle_signal);
-	signal(SIGTERM, handle_signal);
-	socket_startup();
-
-	input_sock = socket(AF_INET, SOCK_DGRAM, 0);
-	display_sock = socket(AF_INET, SOCK_DGRAM, 0);
-	if (input_sock == INVALID_SOCKET || display_sock == INVALID_SOCKET) {
-		fprintf(stderr, "socket creation failed\n");
-		return 1;
-	}
-
-	memset(&input_addr, 0, sizeof(input_addr));
-	input_addr.sin_family = AF_INET;
-	input_addr.sin_port = htons((uint16_t)input_port);
-	input_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	if (bind(input_sock, (struct sockaddr *)&input_addr, sizeof(input_addr)) == SOCKET_ERROR) {
-		fprintf(stderr, "bind input port %d failed\n", input_port);
-		return 1;
-	}
-	set_nonblocking(input_sock);
-
-	memset(&display_addr, 0, sizeof(display_addr));
-	display_addr.sin_family = AF_INET;
-	display_addr.sin_port = htons((uint16_t)display_port);
-	if (inet_pton(AF_INET, display_host, &display_addr.sin_addr) != 1) {
-		fprintf(stderr, "Invalid display host: %s\n", display_host);
-		return 1;
-	}
-
-	init_game(&game);
-	last_ms = now_ms();
-	next_snapshot_ms = last_ms;
-
-	printf("Overbug server listening on UDP %d, sending display snapshots to %s:%d\n",
-	       input_port, display_host, display_port);
-
-	while (running) {
-		double current_ms;
-		float dt;
-
-		receive_inputs(input_sock, &game);
-
-		current_ms = now_ms();
-		dt = (float)((current_ms - last_ms) / 1000.0);
-		if (dt > 0.1f)
-			dt = 0.1f;
-		last_ms = current_ms;
-
-		update_game(&game, dt);
-
-		if (current_ms >= next_snapshot_ms) {
-			char json[SNAPSHOT_BYTES];
-			size_t len = build_snapshot_json(&game, json, sizeof(json));
-
-			sendto(display_sock, json, (int)len, 0,
-			       (struct sockaddr *)&display_addr, sizeof(display_addr));
-			next_snapshot_ms = current_ms + 33.0;
-		}
-
-		sleep_ms(5);
-	}
-
-	CLOSE_SOCKET(input_sock);
-	CLOSE_SOCKET(display_sock);
-	socket_cleanup();
-	return 0;
-}
