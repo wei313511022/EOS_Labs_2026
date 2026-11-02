@@ -99,7 +99,7 @@
     </section>
 
     <section class="panel">
-      <h2 id="game-contract">1. Game contract and facility map</h2>
+      <h2 id="game-contract">1. Game rules and facility map</h2>
       <p>
         Both provided servers use this 16-station facility, its coordinates, and its rules. <code>Lab3/overbug_world.h</code> is the servers' authoritative layout, and the provided display has matching fixed constants. You do not change the game in this lab; the map is here so you can follow what the players and stations do while you run and measure the servers.
       </p>
@@ -182,8 +182,19 @@
         <li>Each player carries at most one item.</li>
         <li>A new Action press operates the nearest facility within 54 pixels of the player's centre, measured to the nearest edge of the facility rectangle. An empty player picks up from it. A carrying player places the item there if the facility accepts it, and otherwise keeps the item.</li>
         <li>At a welder, place a raw, soldering, or ready board and then one material. A new Solder press within 54 pixels of that welder immediately adds the material to the board.</li>
-        <li>Holding Action or Solder does not repeat the interaction; release and press again for another operation.</li>
       </ul>
+
+      <h3>How input updates the game</h3>
+      <ul>
+        <li>Each <code>OBIN</code> packet carries the full button state of one player at that moment.</li>
+        <li><strong>Direction keys:</strong> the server uses the most recent packet of each player. The player keeps moving in that direction, at 185 pixels per second of time since the previous update, until a packet with a different state arrives. Because movement is scaled by the elapsed time (at most 0.5 s per update), the walking speed does not depend on how often the server updates.</li>
+        <li><strong>Action and Solder:</strong> a press is an Action or Solder bit that is 0 in a player's previous packet and 1 in the next. Holding the key does not press again; release and press again for another operation.</li>
+        <li>In each update the server first moves every player, then performs the presses received since the previous update, in the order their packets arrived. Each player performs at most one press per update; further presses by the same player in that update are ignored.</li>
+      </ul>
+      <div class="callout info">
+        <strong>Contested facilities</strong>
+        Presses are performed one at a time, in arrival order. When two players operate the same facility in one update, the press whose packet arrived first is performed first; the second press sees the facility as already changed.
+      </div>
 
       <h3>Orders and round rules</h3>
       <ul>
@@ -191,10 +202,6 @@
         <li>There are always three active orders. Each has an ID, a <code>req:[resistor,capacitor,inductor]</code> requirement, and a <code>locked_board_id</code>. The server picks each requirement at random: 0-2 of each type and 1-4 components in total. Shipping a passed, locked board earns <code>10 + 5 x total required components</code> points and creates a replacement order.</li>
         <li>The overall timer stays at 180 seconds in every <code>OBST</code> packet, but Lab 3 does not decrement it or end the game automatically. Press Esc to close the display session, then use Ctrl-C to stop the server. Recycling wrong or unwanted unlocked items increases <code>recycled</code> without a score penalty. A passed board locked to an order cannot enter recycle; it must go to shipping.</li>
       </ul>
-      <div class="callout info">
-        <strong>Only one player wins</strong>
-        When multiple players contest the same facility, only one valid Action or Solder operation may update it at a time.
-      </div>
     </section>
 
     <section class="panel" id="obst-interface">
@@ -278,10 +285,10 @@ python3 player.py --server 127.0.0.1</code></pre>
 
     <section class="panel">
       <h2>5. What to measure</h2>
-      <p>Measure every item below 10 times for each of S1, T1, and T3, and report the median and range of the 10 results. Choosing tools and methods is part of the assignment. Measure the servers from the outside; do not change their code.</p>
+      <p>Measure every item below 10 times for each of S1, T1, and T3. For A2 and A3, put the values from all 10 runs together and report their median and range; for the other items, report the median and range of the 10 results. Choosing tools and methods is part of the assignment. Measure the servers from the outside; do not change their code.</p>
       <p>Measure under these conditions:</p>
       <ul>
-        <li><strong>Input.</strong> Four players, each sending at 60 Hz the same packets <code>player.py</code> sends. Use the same input for S1, T1, and T3, keep it running for the whole measurement, and do not play while you measure.</li>
+        <li><strong>Input.</strong> Write your own input program that sends <code>OBIN</code> packets for all four players at 60 Hz, in the same format as <code>player.py</code>. Use the same program and settings for S1, T1, and T3, and keep it running for the whole measurement.</li>
         <li><strong>Duration.</strong> Let the server run at least 3 seconds before you start, then measure for at least 30 seconds.</li>
       </ul>
       <h3>A. What the players see</h3>
@@ -289,9 +296,8 @@ python3 player.py --server 127.0.0.1</code></pre>
         <thead><tr><th>#</th><th>Item</th><th>Definition</th></tr></thead>
         <tbody>
           <tr><td>A1</td><td>OBST packet rate</td><td><code>OBST</code> packets received per second.</td></tr>
-          <tr><td>A2</td><td>OBST packet interval</td><td>Time between consecutive <code>OBST</code> packets: median and maximum.</td></tr>
-          <tr><td>A3</td><td>Key-press latency</td><td>From the moment a key goes down until the first <code>OBST</code> packet that shows the player moving arrives. Choose a direction in which the player can move. Report the median.</td></tr>
-          <tr><td>A4</td><td>Lost data</td><td>Input packets dropped before the server read them, and game updates that never reached the display (gaps in <code>tick_id</code>).</td></tr>
+          <tr><td>A2</td><td>OBST packet interval</td><td>Time between consecutive <code>OBST</code> packets.</td></tr>
+          <tr><td>A3</td><td>Key-press latency</td><td>From the moment your input program sends a direction-key press until the first <code>OBST</code> packet that shows the player moving in that direction arrives. Choose a direction in which the player can move.</td></tr>
         </tbody>
       </table>
       <h3>B. Inside the server</h3>
