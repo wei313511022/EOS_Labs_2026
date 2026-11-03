@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Lab 3 for RTES913: EOS - design a race-safe multiplayer Overbug server.">
-  <title>Lab 3 - Concurrent Multiplayer Server</title>
+  <meta name="description" content="Lab 3 for RTES913: EOS - measure a single-threaded and a multithreaded Overbug server in three configurations.">
+  <title>Lab 3 - Parallel Server Performance</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -26,43 +26,40 @@
   <main class="page">
     <section class="hero lab-hero">
       <p class="eyebrow">RTES913 - EOS - Overbug</p>
-      <h1>Lab 3: Concurrent Multiplayer Server</h1>
+      <h1>Lab 3: Parallel Server Performance</h1>
       <p class="subtitle">
-        Refactor the Lab 2 server for two to four Raspberry Pi players, then
-        choose and justify a race-safe concurrency design.
+        Run two provided four-player servers in three configurations, work out
+        how each is built, measure them, and explain which is better and why.
       </p>
     </section>
 
     <section class="panel">
       <h2>Before you begin</h2>
       <div class="callout warning">
-        <strong>Linux/POSIX only</strong>
-        Build and run the Lab 3 server on Ubuntu or Raspberry Pi OS. You may choose threads, processes, message passing, or shared memory where appropriate; Windows support is not required.
+        <strong>Runs on a PC or VM</strong>
+        Everything in this lab runs on one Ubuntu/Linux machine: the servers, the display, the input, and your measurements. It can be a PC or a VM, such as the Ubuntu VM from Lab 0. No Raspberry Pi is needed.
       </div>
       <p>Before starting this lab, make sure you have:</p>
       <ul>
-        <li>completed Lab 2 and confirmed that each controller can send a valid six-byte <code>OBIN</code> packet;</li>
-        <li>a PC running <code>Lab2/display.py</code>, plus Pi readers or the <code>Lab3/player.py</code> keyboard simulator; and</li>
-        <li>the provided <code>Lab3/server.c</code> copied as the starting point for your server.</li>
+        <li>an Ubuntu/Linux PC or VM with at least four CPU cores (for a VM, at least four virtual CPUs), and <code>pygame-ce</code> installed for <code>Lab3/display.py</code> and <code>Lab3/player.py</code>; and</li>
+        <li>the provided <code>Lab3/servers/</code> folder. You do not write a server in this lab.</li>
       </ul>
       <p>This lab assumes you understand:</p>
       <ul>
-        <li>basic C structs, loops, and functions;</li>
-        <li>UDP sockets for receiving input and sending data;</li>
-        <li>Multitasking: a computer can make progress on more than one job.</li>
-        <li>Shared-state safety: a protection of the critical section.</li>
-        <li>Inter-process communication (IPC): a way to exchange information.</li>
-        <li>the Lab 2 path from controller input to an <code>OBIN</code> packet.</li>
+        <li>basic C, UDP sockets, and POSIX threads with mutexes and condition variables;</li>
+        <li>from Lab 1: tasks and thread IDs, CPU time versus wall-clock time, and context switches;</li>
+        <li>that the scheduler decides which runnable task gets each CPU, and other runnable tasks wait in a run queue; and</li>
+        <li>the six-byte <code>OBIN</code> input packet from Lab 2.</li>
       </ul>
-      <p>By the end, you will build a two-to-four-player game server that receives input safely, updates shared game state, and sends current <code>OBST</code> snapshots to the display.</p>
+      <p>By the end, you will be able to measure a running multithreaded program from the outside and use the numbers to explain when splitting work across threads helps, when it hurts, and what it costs.</p>
     </section>
 
     <section class="panel">
       <h2>System overview</h2>
-      <p>Several Pi readers send input concurrently. The diagram shows the responsibilities your design must coordinate, not a required process or thread layout.</p>
+      <p>Four players send input at the same time. Both servers do the three jobs in the diagram. How each one organizes them is for you to find out.</p>
       <div class="lab3-system-map" aria-label="Lab 3 system responsibilities">
         <div class="lab3-external">
-          <strong>Pi readers or one shared keyboard simulator</strong>
+          <strong>Keyboard simulator <code>player.py</code></strong>
           <span>Players 1-4 send <code>OBIN</code> input.</span>
         </div>
 
@@ -71,20 +68,20 @@
           <b>→</b>
         </div>
 
-        <section class="lab3-server-boundary" aria-label="Student responsibilities in Lab3 server.c">
-          <p class="lab3-server-title"><span>Student work</span> <code>Lab3/server.c</code></p>
+        <section class="lab3-server-boundary" aria-label="Jobs done by the provided servers in Lab3/servers">
+          <p class="lab3-server-title"><span>Provided</span> <code>Lab3/servers/</code></p>
           <div class="lab3-server-jobs">
             <article>
               <strong>Receive input</strong>
-              <span>Accept all active player IDs and deliver each input to the game state.</span>
+              <span>Read the input packets of all four players and pass each input to the game.</span>
             </article>
             <article>
               <strong><a href="#game-contract">Update the game</a></strong>
-              <span>Own movement, facility collision, stations, items, orders, score, and race safety.</span>
+              <span>Move the players and run stations, items, orders, and score.</span>
             </article>
             <article>
-              <strong><a href="#obst-interface">Publish snapshots</a></strong>
-              <span>Produce current <code>OBST</code> state without delaying the game.</span>
+              <strong><a href="#obst-interface">Publish OBST packets</a></strong>
+              <span>Send the current game state to the display as <code>OBST</code> packets.</span>
             </article>
           </div>
         </section>
@@ -96,16 +93,15 @@
 
         <div class="lab3-external">
           <strong>Provided display</strong>
-          <span><code>Lab2/display.py</code> renders the snapshots.</span>
+          <span><code>Lab3/display.py</code> draws each <code>OBST</code> packet it receives.</span>
         </div>
       </div>
-      <p class="section-intro">The rectangle identifies what <code>server.c</code> must do. Students decide whether those responsibilities use a loop, threads, processes, or another suitable design.</p>
     </section>
 
     <section class="panel">
-      <h2 id="game-contract">1. Game contract and facility map</h2>
+      <h2 id="game-contract">1. Game rules and facility map</h2>
       <p>
-        The multiplayer server keeps this 16-station facility, its coordinates, and its rules. <code>Lab3/overbug_world.h</code> is the server's authoritative layout, and the provided display has matching fixed constants. Extend the player model and coordination design without duplicating or redesigning the game world.
+        Both provided servers use this 16-station facility, its coordinates, and its rules. <code>Lab3/overbug_world.h</code> is the servers' authoritative layout, and the provided display has matching fixed constants. You do not change the game in this lab; the map is here so you can follow what the players and stations do while you run and measure the servers.
       </p>
 
       <figure class="facility-map">
@@ -177,41 +173,48 @@
         </tbody>
       </table>
 
-      <h3>Player position, movement, and facility control</h3>
+      <h3>Players and actions</h3>
       <ul>
-        <li><code>x</code> and <code>y</code> are the centre of the player's circular icon in the fixed 1280 by 720 world. <code>x</code> increases to the right and <code>y</code> increases downward.</li>
-        <li>At the start of a game, place player 1 at <code>(560, 370)</code>, player 2 at <code>(620, 370)</code>, player 3 at <code>(500, 370)</code>, and player 4 at <code>(680, 370)</code>. Initialize only players <code>1..N</code> selected by <code>--players N</code>.</li>
+        <li><code>x</code> and <code>y</code> are the centre of the player's circular icon in the fixed 1280 by 720 world.</li>
+        <li>Players 1 to 4 start at <code>(560, 370)</code>, <code>(620, 370)</code>, <code>(500, 370)</code>, and <code>(680, 370)</code>.</li>
         <li>A player has an 18-pixel radius. The player centre stays between <code>x = 88..1192</code> and <code>y = 114..618</code>, so the circle cannot leave the playable map.</li>
-        <li>If a move would move the player's circle into a facility rectangle, the supplied baseline cancels that move and leaves the player at the previous position. Players may pass through other players.</li>
-        <li>A new Action press controls the nearest facility within 54 pixels of the player's centre. The distance is measured to the nearest edge of the facility rectangle, not its centre.</li>
-        <li>An empty player tries to pick up from that facility. A player carrying an item tries to place it there. If the facility is busy or cannot accept the item, the player keeps the item.</li>
-        <li>Press Solder while within 54 pixels of a welder to complete one pending weld immediately. Holding Action or Solder does not repeat the interaction; release and press again for another operation.</li>
+        <li>If a move would put the player's circle inside a facility rectangle, the server cancels that move and leaves the player where it was. Players may pass through one another.</li>
+        <li>Each player carries at most one item.</li>
+        <li>A new Action press operates the nearest facility within 54 pixels of the player's centre, measured to the nearest edge of the facility rectangle. An empty player picks up from it. A carrying player places the item there if the facility accepts it, and otherwise keeps the item.</li>
+        <li>At a welder, place a raw, soldering, or ready board and then one material. A new Solder press within 54 pixels of that welder immediately adds the material to the board.</li>
       </ul>
 
-      <h3>Player actions and round rules</h3>
+      <h3>How input updates the game</h3>
       <ul>
-        <li>Each player carries at most one item. Movement is bounded by the map and facility rectangles; players may pass through one another.</li>
-        <li>An Action rising edge operates the nearest facility within 54 pixels. An empty player picks up; a carrying player drops when that facility accepts the item.</li>
-        <li>At a welder, place a raw, soldering, or ready board and then one material. A Solder rising edge near that welder immediately adds the material to the board.</li>
-        <li>A verifier accepts a raw, soldering, or ready board and immediately passes it only when its resistor, capacitor, and inductor counts exactly match an unlocked order; otherwise it fails the board. If the board matches more than one unlocked order with identical requirements, it must lock the first matching order in <code>orders[]</code>, so identical orders are completed in their displayed order.</li>
-        <li>There are three active orders. You may design your own method for generating the initial and replacement orders, but every order must follow this format and these rules: it has an ID, a <code>req:[resistor,capacitor,inductor]</code> requirement, and a <code>locked_board_id</code>; it needs 1-4 total components, with 0-2 of each type. Shipping a passed, locked board earns <code>10 + 5 x total required components</code> points and creates a replacement order.</li>
-        <li>The overall timer stays at 180 seconds in every snapshot, but Lab 3 does not decrement it or end the game automatically. Press Esc to close the display session, then use Ctrl-C to stop the server. Recycling wrong or unwanted unlocked items increases <code>recycled</code> without a score penalty. A passed board locked to an order cannot enter recycle; it must go to shipping.</li>
+        <li>Each <code>OBIN</code> packet carries the full button state of one player at that moment.</li>
+        <li><strong>Direction keys:</strong> the server uses the most recent packet of each player. The player keeps moving in that direction, at 185 pixels per second of time since the previous update, until a packet with a different state arrives. Because movement is scaled by the elapsed time (at most 0.5 s per update), the walking speed does not depend on how often the server updates.</li>
+        <li><strong>Action and Solder:</strong> a press is an Action or Solder bit that is 0 in a player's previous packet and 1 in the next. Holding the key does not press again; release and press again for another operation.</li>
+        <li>In each update the server first moves every player, then performs the presses received since the previous update, in the order their packets arrived. Each player performs at most one press per update; further presses by the same player in that update are ignored.</li>
       </ul>
       <div class="callout info">
-        <strong>Only one player wins</strong>
-        When multiple players contest the same facility, only one valid Action or Solder operation may update it at a time.
+        <strong>Contested facilities</strong>
+        Presses are performed one at a time, in arrival order. When two players operate the same facility in one update, the press whose packet arrived first is performed first; the second press sees the facility as already changed.
       </div>
+
+      <h3>Orders and round rules</h3>
+      <ul>
+        <li>A verifier accepts a raw, soldering, or ready board and immediately passes it only when its resistor, capacitor, and inductor counts exactly match an unlocked order; otherwise it fails the board. If the board matches more than one unlocked order, the verifier locks the first one in <code>orders[]</code>, so identical orders are completed in their displayed order.</li>
+        <li>There are always three active orders. Each has an ID, a <code>req:[resistor,capacitor,inductor]</code> requirement, and a <code>locked_board_id</code>. The server picks each requirement at random: 0-2 of each type and 1-4 components in total. Shipping a passed, locked board earns <code>10 + 5 x total required components</code> points and creates a replacement order.</li>
+        <li>The overall timer stays at 180 seconds in every <code>OBST</code> packet, but Lab 3 does not decrement it or end the game automatically. Press Esc to close the display session, then use Ctrl-C to stop the server. Recycling wrong or unwanted unlocked items increases <code>recycled</code> without a score penalty. A passed board locked to an order cannot enter recycle; it must go to shipping.</li>
+      </ul>
     </section>
 
     <section class="panel" id="obst-interface">
       <h2>2. <code>OBST</code> display interface</h2>
-      <p><code>Lab2/display.py</code> accepts JSON datagrams with <code>"packet_id":"OBST"</code>. It owns the provided fixed facility map, so the server publishes only moving players, orders, and changing station state.</p>
+      <p>An <code>OBST</code> packet is one UDP datagram that the server sends to the display after a game update. It holds the game state at that moment as JSON, with <code>"packet_id":"OBST"</code>. <code>Lab3/display.py</code> owns the fixed facility map, so the packet carries only moving players, orders, and changing station state. (This is not the <code>task_snapshot</code> system call from Lab 1.)</p>
       <pre><code>{
   "packet_id": "OBST",
-  "players_count": 2, "remaining_ms": 180000,
+  "players_count": 4, "remaining_ms": 180000,
   "score": 20, "completed": 1, "recycled": 0, "game_over": false,
   "players": [{"id": 1, "x": 560.0, "y": 370.0, "held": null},
-              {"id": 2, "x": 620.0, "y": 370.0, "held": null}],
+              {"id": 2, "x": 620.0, "y": 370.0, "held": null},
+              {"id": 3, "x": 500.0, "y": 370.0, "held": null},
+              {"id": 4, "x": 680.0, "y": 370.0, "held": null}],
   "orders": [{"id": 1, "req": [1, 0, 1], "locked_board_id": 0}],
   "stations": [{"id": "table_5", "item": null},
                {"id": "welder_1", "board": null,
@@ -220,144 +223,54 @@
 }</code></pre>
       <table>
         <thead>
-          <tr><th scope="col">Field</th><th scope="col">Required shape and meaning</th></tr>
+          <tr><th scope="col">Field</th><th scope="col">Contents</th></tr>
         </thead>
         <tbody>
           <tr><td>Header, score, and retained timer state</td><td><code>packet_id</code>, <code>players_count</code>, <code>remaining_ms</code>, <code>score</code>, <code>completed</code>, <code>recycled</code>, and <code>game_over</code>. Lab 3 keeps <code>remaining_ms</code> at <code>180000</code> and <code>game_over</code> false.</td></tr>
-          <tr><td><code>players[]</code></td><td>One object per active ID: <code>id</code>, <code>x</code> and <code>y</code> for the player's centre, and <code>held</code>.</td></tr>
+          <tr><td><code>players[]</code></td><td>One object per player: <code>id</code>, <code>x</code> and <code>y</code> for the player's centre, and <code>held</code>.</td></tr>
           <tr><td><code>orders[]</code></td><td><code>id</code>, <code>req:[resistor,capacitor,inductor]</code>, and <code>locked_board_id</code>. A value of <code>0</code> is open; a nonzero value is the passed board ID reserved for that order and means it is ready to ship.</td></tr>
-          <tr><td><code>stations[]</code></td><td>Only changing state for tables, welders, and verifiers. The display looks up each <code>id</code> in its fixed facility constants; do not send station type or coordinates.</td></tr>
+          <tr><td><code>stations[]</code></td><td>Only changing state for tables, welders, and verifiers. The display looks up each <code>id</code> in its fixed facility constants, so station type and coordinates are not sent.</td></tr>
           <tr><td>Station-state fields</td><td>Tables add <code>item</code>; welders add <code>board</code>, <code>pending_material</code>, and <code>progress</code>; verifiers add <code>item</code> and <code>progress</code>. Immediate welding and verification leave <code>progress</code> at <code>0.0</code>.</td></tr>
           <tr><td>Item value</td><td><code>null</code>, a material <code>{"kind":"material","component":"..."}</code>, or a board with <code>kind</code>, <code>board_id</code>, <code>state</code>, <code>counts</code>, and <code>locked_order_id</code>.</td></tr>
         </tbody>
       </table>
-      <div class="callout warning">
-        <strong>Compatibility requirement</strong>
-        Do not change the <code>OBST</code> packet ID, fixed facility IDs, or documented dynamic field names. Add every active player to <code>players[]</code> and set <code>players_count</code> to the same count.
-      </div>
       <div class="callout info">
         <strong>Provided display note</strong>
-        <code>Lab2/display.py</code> is intentionally unchanged. Lab 3 preserves its timer and progress fields for compatibility, but does not calculate them: the timer stays at <code>03:00</code> and each progress value stays at <code>0.0</code> after an immediate operation.
+        <code>Lab3/display.py</code> draws the same way as the Lab 2 display. Lab 3 preserves its timer and progress fields for compatibility, but does not calculate them: the timer stays at <code>03:00</code> and each progress value stays at <code>0.0</code> after an immediate operation.
       </div>
     </section>
 
     <section class="panel">
-      <h2>3. From Lab 2 to Lab 3</h2>
+      <h2>3. The provided servers</h2>
+      <p><code>Lab3/servers/</code> contains two complete servers, <code>server_single</code> and <code>server_threads</code>, built from the source files in the same folder. Both play the same four-player game. Each game update and each <code>OBST</code> packet also does a fixed amount of simulated CPU work, set by <code>--game-work-ms</code> and <code>--tx-work-ms</code> (50 ms each by default).</p>
+      <p>You will run them in three configurations:</p>
       <table>
-        <thead>
-          <tr>
-            <th scope="col">Lab 2 baseline</th>
-            <th scope="col">Lab 3 target</th>
-          </tr>
-        </thead>
+        <thead><tr><th>Name</th><th>Command</th></tr></thead>
         <tbody>
-          <tr>
-            <td>One player, ID 1</td>
-            <td>Two to four active players, each with a distinct ID and spawn position</td>
-          </tr>
-          <tr>
-            <td>One loop receives input, updates the game, and sends snapshots</td>
-            <td>Coordinate input, authoritative updates, and display output with a design you choose</td>
-          </tr>
-          <tr>
-            <td>No concurrent access to game state</td>
-            <td>Prevent races when players claim stations, items, orders, or score</td>
-          </tr>
-          <tr>
-            <td>Snapshots are sent directly from the loop</td>
-            <td>Transfer a current snapshot to the display without an unbounded backlog</td>
-          </tr>
+          <tr><td>S1</td><td><code>./server_single --cpus 1</code></td></tr>
+          <tr><td>T1</td><td><code>./server_threads --cpus 1</code></td></tr>
+          <tr><td>T3</td><td><code>./server_threads --cpus 1,2,3</code></td></tr>
         </tbody>
       </table>
+      <p>Replace the CPU IDs with cores that are idle on your machine. The examples leave CPU 0 for the display, <code>player.py</code>, and your measuring programs. How each server is built, and what the three configurations change, is for you to work out from the source code and from your measurements.</p>
     </section>
 
     <section class="panel">
-      <h2>4. Server requirements</h2>
-      <ul>
-        <li>Add <code>--players N</code>, accepting <code>N = 2..4</code> and defaulting to <code>4</code>.</li>
-        <li>Replace <code>game.player</code> with player storage and an active-player count. Initialize unique IDs and spawn positions.</li>
-        <li>Accept valid <code>OBIN</code> input for every active player ID. The packet stays exactly six bytes.</li>
-        <li>Preserve the 16-station map, interaction rules, and compact <code>OBST</code> contract documented above.</li>
-        <li>Update movement, station interactions, soldering, orders, and the <code>OBST</code> snapshot for all active players. Players may pass through one another.</li>
-        <li>Use the provided <code>Lab2/reader.c</code> and <code>Lab2/display.py</code>; preserve their fixed facility map and UDP ports <code>17666</code> and <code>17667</code>.</li>
-        <li>Choose, document, and implement a race-safe design for input handling, game updates, and display output.</li>
-        <li>Ensure a slow display cannot indefinitely delay the game or accumulate unbounded stale snapshots.</li>
-      </ul>
-      <pre><code>struct __attribute__((packed)) ob_input_packet {
-    char magic[4];       /* "OBIN" */
-    uint8_t player_id;   /* active player ID */
-    uint8_t button_mask; /* 6-bit device state */
-};</code></pre>
-    </section>
-
-    <section class="panel">
-      <h2>5. Design the coordination</h2>
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">Responsibility</th>
-            <th scope="col">Required behavior</th>
-            <th scope="col">Design question</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Input</td>
-            <td>Receive <code>OBIN</code> datagrams on port <code>17666</code> and update input for active IDs.</td>
-            <td>Which component receives input, and how does authoritative game state receive it?</td>
-          </tr>
-          <tr>
-            <td>Game</td>
-            <td>Advance movement, collisions, stations, orders, and score; then create a JSON snapshot.</td>
-            <td>Who owns these updates, and how are station claims made indivisible?</td>
-          </tr>
-          <tr>
-            <td>Display</td>
-            <td>Send <code>OBST</code> JSON to port <code>17667</code>.</td>
-            <td>How is a current snapshot transferred without delaying simulation?</td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <section class="panel">
-      <h2>6. Build and run</h2>
-      <p>Run each program on the machine shown below. Multiple Raspberry Pis are optional: you may use the provided keyboard simulator on the PC instead of physical Pi controllers.</p>
-      <table>
-        <thead><tr><th>Program</th><th>Runs on</th><th>Purpose</th></tr></thead>
-        <tbody>
-          <tr><td><code>server</code></td><td>Ubuntu/Linux PC or Raspberry Pi</td><td>Owns the authoritative multiplayer game state. Build and run it on the same machine.</td></tr>
-          <tr><td><code>display.py</code></td><td>PC</td><td>Displays the <code>OBST</code> snapshots sent by the server.</td></tr>
-          <tr><td><code>overbug_buttons.ko</code> and <code>reader</code></td><td>Raspberry Pi</td><td>Optional physical controller. Use one reader and a distinct player ID for each Pi.</td></tr>
-          <tr><td><code>player.py</code></td><td>PC</td><td>Optional replacement for the Pi controllers. One simulator provides keyboard input for all four player IDs.</td></tr>
-        </tbody>
-      </table>
-      <h3>Build the Lab 3 server</h3>
-      <p>On the Ubuntu/Linux PC or Raspberry Pi that will run the server, write your own <code>Makefile</code>; one is not provided. It should compile <code>server.c</code> into a <code>server</code> program (for example, through a default <code>make</code> target) and offer a <code>make clean</code> target.</p>
-      <pre><code>cd Lab3
+      <h2>4. Build and run</h2>
+      <pre><code>cd Lab3/servers
 make</code></pre>
-      <p>Add architecture-specific link options as your implementation needs them; for example, add <code>-pthread</code> for POSIX threads, mutexes, or spinlocks. POSIX message queues may also require <code>-lrt</code> on some Linux systems.</p>
-      <h3>Start the provided display on the PC</h3>
-      <pre><code>python3 ../Lab2/display.py --host 0.0.0.0 --port 17667</code></pre>
-      <h3>Start your multiplayer server on its Linux machine</h3>
-      <pre><code>./server --players 4 --input-port 17666 --display-host 127.0.0.1 --display-port 17667</code></pre>
-      <p>This example assumes the server and display run on the same PC. If the server runs on a Raspberry Pi, replace <code>127.0.0.1</code> after <code>--display-host</code> with the PC's IP address. The supplied starter does not accept <code>--players</code> yet; this command should work after your refactor.</p>
-      <h3>Input option A: Raspberry Pi controllers</h3>
-      <p>On each Pi, reuse the Lab 2 reader and give every controller a different ID:</p>
-      <pre><code>cd Lab2
-make reader
-./reader --server &lt;SERVER_IP&gt; --player 1
+      <p>Run <code>./server_single --help</code> or <code>./server_threads --help</code> for every option. Each server prints its process and thread IDs when it starts; press <code>Ctrl-C</code> to stop it. Every <code>OBST</code> packet carries a <code>tick_id</code> that counts game updates.</p>
+      <p>Start the display, one server, and the keyboard simulator, each in its own terminal:</p>
+      <pre><code># in Lab3
+python3 display.py --host 127.0.0.1 --port 17667
 
-# On the second Pi:
-./reader --server &lt;SERVER_IP&gt; --player 2</code></pre>
-      <p>For three or four physical controllers, start readers with <code>--player 3</code> and <code>--player 4</code> on additional Pis, and start the server with the matching <code>--players</code> count. You do not need multiple Pis if you use input option B.</p>
-      <h3>Input option B: PC keyboard simulator (no Raspberry Pi required)</h3>
-      <p><code>Lab3/player.py</code> opens one keyboard-controller window on the PC and sends the same <code>OBIN</code> packets as the Pi readers for all four player IDs. It uses the same <code>pygame-ce</code> package as <code>display.py</code>. After your server accepts IDs 1-4, start one simulator:</p>
-      <pre><code>cd Lab3
+# in Lab3/servers
+./server_threads --cpus 1,2,3
 
+# in Lab3
 python3 player.py --server 127.0.0.1</code></pre>
-      <p>This example assumes the server also runs on the PC. If the server runs on a Raspberry Pi, replace <code>127.0.0.1</code> with that Pi's IP address.</p>
-      <p>The window sends all four players’ current device states at 60 Hz, so they can act simultaneously. Press <code>Esc</code> or close the window to stop every simulated player.</p>
+      <p><code>player.py</code> sends all four players' current key states at 60 Hz. Its window must have keyboard focus.</p>
+      <p>Only one program can receive the <code>OBST</code> packets sent to a UDP port. To read them with your own program, stop <code>display.py</code> or send them to another port with the server's <code>--display-port</code> option.</p>
       <table>
         <thead><tr><th>Player</th><th>Move</th><th>Action</th><th>Solder</th></tr></thead>
         <tbody>
@@ -367,18 +280,58 @@ python3 player.py --server 127.0.0.1</code></pre>
           <tr><td>4</td><td>8 / 4 / 5 / 6</td><td>0</td><td>7</td></tr>
         </tbody>
       </table>
-      <p class="note">Some keyboards cannot register every large key combination at once. Test the controls you need, or use separate Raspberry Pi readers when the keyboard limits simultaneous input.</p>
+      <p>Play S1, T1, and T3 by hand before you measure anything, and write down what you notice.</p>
+    </section>
+
+    <section class="panel">
+      <h2>5. What to measure</h2>
+      <p>Measure every item below 10 times for each of S1, T1, and T3. For A2 and A3, put the values from all 10 runs together and report their median and range; for the other items, report the median and range of the 10 results. Choosing tools and methods is part of the assignment. Measure the servers from the outside; do not change their code.</p>
+      <p>Measure under these conditions:</p>
+      <ul>
+        <li><strong>Input.</strong> Write your own input program that sends <code>OBIN</code> packets for all four players at 60 Hz, in the same format as <code>player.py</code>. Use the same program and settings for S1, T1, and T3, and keep it running for the whole measurement.</li>
+        <li><strong>Duration.</strong> Let the server run at least 3 seconds before you start, then measure for at least 30 seconds.</li>
+      </ul>
+      <h3>A. What the players see</h3>
+      <table>
+        <thead><tr><th>#</th><th>Item</th><th>Definition</th></tr></thead>
+        <tbody>
+          <tr><td>A1</td><td>OBST packet rate</td><td><code>OBST</code> packets received per second.</td></tr>
+          <tr><td>A2</td><td>OBST packet interval</td><td>Time between consecutive <code>OBST</code> packets.</td></tr>
+          <tr><td>A3</td><td>Key-press latency</td><td>From the moment your input program sends a direction-key press until the first <code>OBST</code> packet that shows the player moving in that direction arrives. Choose a direction in which the player can move.</td></tr>
+        </tbody>
+      </table>
+      <h3>B. Inside the server</h3>
+      <p>Measure B1-B4 for each thread and B5 for the whole server.</p>
+      <table>
+        <thead><tr><th>#</th><th>Item</th><th>Definition</th></tr></thead>
+        <tbody>
+          <tr><td>B1</td><td>CPU usage</td><td>CPU time used by the thread divided by wall-clock time.</td></tr>
+          <tr><td>B2</td><td>CPU placement</td><td>Which CPU or CPUs the thread actually ran on.</td></tr>
+          <tr><td>B3</td><td>Context switches</td><td>Voluntary and involuntary context switches per second.</td></tr>
+          <tr><td>B4</td><td>Run-queue wait</td><td>Time the thread was ready to run but waiting for a CPU, divided by wall-clock time.</td></tr>
+          <tr><td>B5</td><td>Total CPU usage</td><td>CPU cores used by the whole server.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>6. Report</h2>
+      <ol>
+        <li><strong>Architecture.</strong> Draw a flowchart of each server showing its threads, what each thread does, and the data they share. Mark the critical sections and explain how each one is protected. Then trace one key press from its input packet to the <code>OBST</code> packet that shows it.</li>
+        <li><strong>Method.</strong> For each item in tables A and B: what you ran, where it ran, and how you turned its output into the number you report, plus the checks that show your method is correct.</li>
+        <li><strong>Results.</strong> One table with every item for S1, T1, and T3.</li>
+        <li><strong>Analysis.</strong> Explain your results. Then say which configuration is better, under which conditions, and why, supported by your measurements.</li>
+      </ol>
     </section>
 
     <section class="panel">
       <h2>7. QA</h2>
       <h3>Questions</h3>
       <ol>
-        <!-- <li>Present a flowchart of your server design. Identify input handling, the authoritative game-state owner, synchronization, snapshot creation, and output to <code>display.py</code>.</li> -->
-        <li>Which concurrency architecture did you choose: an event loop, threads, processes, or a combination? Justify the choice against the alternatives.</li>
-        <li>Identify your critical sections. Explain how your design prevents races when players access shared facilities, items, orders, scores, and snapshots.</li>
-        <li>Where is the authoritative game state stored, and how is state transferred between components? Explain the role of in-process memory, shared memory, pipes, or message queues in your design.</li>
-        <li>Should the authoritative game state use a memory pool? Justify your answer based on the fixed numbers of players, stations, and orders.</li>
+        <li>What is the difference between concurrency and parallelism? Explain it with your measurements of S1, T1, and T3.</li>
+        <li>Did you test on a VM or on a Linux PC? When you chose CPUs, did the threads really run on different physical CPUs?</li>
+        <li>T1 and T3 are implemented with threads. If they used processes instead, what would need to change?</li>
+        <li>Following the previous question, would the performance be different? Why?</li>
         <li>What other insights do you gain from this lab?</li>
       </ol>
     </section>
