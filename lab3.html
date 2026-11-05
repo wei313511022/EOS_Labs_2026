@@ -42,7 +42,7 @@
       <p>Before starting this lab, make sure you have:</p>
       <ul>
         <li>an Ubuntu/Linux PC or VM with at least four CPU cores (for a VM, at least four virtual CPUs), and <code>pygame-ce</code> installed for <code>Lab3/display.py</code> and <code>Lab3/player.py</code>; and</li>
-        <li>the provided <code>Lab3/servers/</code> folder. You do not write a server in this lab.</li>
+        <li>the provided <code>Lab3/servers/</code> folder. Besides measuring these servers, you write one more server of your own (Report item 5).</li>
       </ul>
       <p>This lab assumes you understand:</p>
       <ul>
@@ -321,6 +321,7 @@ python3 player.py --server 127.0.0.1</code></pre>
         <li><strong>Method.</strong> For each item in tables A and B: what you ran, where it ran, and how you turned its output into the number you report, plus the checks that show your method is correct.</li>
         <li><strong>Results.</strong> One table with every item for S1, T1, and T3.</li>
         <li><strong>Analysis.</strong> Explain your results. Then say which configuration is better, under which conditions, and why, supported by your measurements.</li>
+        <li><strong>Your own server.</strong> Write one more server with a different design, such as a different split of work among threads or processes, or a different way of handling data between them. Keep the same game rules, packet formats, and simulated work (<code>--game-work-ms 50</code>, <code>--tx-work-ms 50</code>). Measure it the same way as S1, T1, and T3, add it to your results table, and compare. It does not need to be faster; what matters is whether your measurements match your explanation.</li>
       </ol>
     </section>
 
